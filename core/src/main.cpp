@@ -1,6 +1,7 @@
 #include <iostream>
 #include "Box.h"
 #include "Pallet.h"
+#include "Placement.h"
 
 int main() {
     using namespace std;
@@ -13,7 +14,7 @@ int main() {
     cout << "Height: " << myBox.getHeight() << std::endl;
     cout << "Weight: " << myBox.getWeight() << std::endl;
 
-    Pallet pallet(1200, 1000, 1100, 900);
+    Pallet pallet(1200, 1000, 1100, 980);
 
 cout << "Pallet Length: "
      << pallet.getLength() << endl;
@@ -24,5 +25,11 @@ cout << "Pallet Max Load Length: "
 cout << "Pallet Max Load Width: "
         << pallet.getMaxLoadWidth() << endl;        
         
+        Placement p1(
+    1,6,0,300,200, 0
+);
+
+cout << p1.getX() << endl;
+cout << p1.getY() << endl;
     return 0;
 }
