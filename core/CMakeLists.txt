@@ -10,4 +10,5 @@ include_directories(include)
 add_executable(palletization
     src/main.cpp
     src/Box.cpp
+    src/Pallet.cpp
 )
