@@ -2,6 +2,7 @@
 #include "Box.h"
 #include "Pallet.h"
 #include "Placement.h"
+#include "Statistics.h"
 
 int main() {
     using namespace std;
@@ -31,5 +32,11 @@ cout << "Pallet Max Load Width: "
 
 cout << p1.getX() << endl;
 cout << p1.getY() << endl;
+
+Statistics stats(5, 10, 2000.0, 0.75);
+cout << "Boxes Placed: " << stats.getBoxesPlaced() << endl;
+cout << "Boxes Remaining: " << stats.getBoxesRemaining() << endl;
+cout << "Occupied Area: " << stats.getOccupiedArea() << endl;
+cout << "Utilization: " << stats.getUtilization() << endl;
     return 0;
 }

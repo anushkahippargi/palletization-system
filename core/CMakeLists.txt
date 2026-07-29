@@ -12,4 +12,5 @@ add_executable(palletization
     src/Box.cpp
     src/Pallet.cpp
     src/Placement.cpp
+    src/Statistics.cpp
 )
