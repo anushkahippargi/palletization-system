@@ -3,19 +3,24 @@
 class Pallet
 {
 private:
+
     double length;
     double width;
-    double maxLoadLength;
-    double maxLoadWidth;
+    double height;
+
+    double maxLoadWeight;
 
 public:
-    Pallet(double length,
-           double width,
-           double maxLoadLength,
-           double maxLoadWidth);
+
+    Pallet(
+        double length,
+        double width,
+        double height,
+        double maxLoadWeight);
 
     double getLength() const;
     double getWidth() const;
-    double getMaxLoadLength() const;
-    double getMaxLoadWidth() const;
+    double getHeight() const;
+
+    double getMaxLoadWeight() const;
 };

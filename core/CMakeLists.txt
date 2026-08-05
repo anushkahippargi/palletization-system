@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(include)
-
 add_executable(palletization
     src/main.cpp
     src/Box.cpp
@@ -15,4 +14,6 @@ add_executable(palletization
     src/Statistics.cpp
     src/RowAlgorithm.cpp
     src/Matrix4x4.cpp
+    src/PalletizationResult.cpp
+    src/PalletStatistics.cpp
 )

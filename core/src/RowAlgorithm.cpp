@@ -1,19 +1,27 @@
-#include <vector>
-
 #include "RowAlgorithm.h"
 
 using namespace std;
 
-vector<Placement> RowAlgorithm::generatePattern(
+PalletizationResult RowAlgorithm::generatePattern(
     const Pallet& pallet,
     const Box& box,
     int quantity)
 {
-    vector<Placement> placements;
+    PalletizationResult result;
+    double boxVolume =
+    box.getLength() *
+    box.getWidth() *
+    box.getHeight();
+
+double palletVolume =
+    pallet.getLength() *
+    pallet.getWidth() *
+    pallet.getHeight();
 
     double x = 0;
     double y = 0;
     double z = 0;
+    int boxesPlaced = 0;
 
     for (int i = 1; i <= quantity; i++)
     {
@@ -45,12 +53,36 @@ vector<Placement> RowAlgorithm::generatePattern(
             i,
             pose);
 
-        placements.push_back(
+        result.getPlacements().push_back(
             placement);
+            boxesPlaced++;
 
         // Move to the next position
         x += box.getLength();
     }
+Statistics& statistics =
+    result.getStatistics();
 
-    return placements;
+statistics.setTotalBoxes(
+    boxesPlaced);
+
+if (boxesPlaced > 0)
+{
+    statistics.setUsedPallets(
+        1);
+}
+else
+{
+    statistics.setUsedPallets(
+        0);
+}
+
+PalletStatistics palletStatistics(
+    1,
+    boxesPlaced * boxVolume,
+    palletVolume);
+
+statistics.addPalletStatistics(
+    palletStatistics);
+    return result;
 }

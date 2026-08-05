@@ -1,27 +1,33 @@
-# include "Pallet.h"
-Pallet::Pallet(double length,
-               double width,
-               double maxLoadLength,
-               double maxLoadWidth)
+#include "Pallet.h"
+
+Pallet::Pallet(
+    double length,
+    double width,
+    double height,
+    double maxLoadWeight)
     : length(length),
       width(width),
-      maxLoadLength(maxLoadLength),
-      maxLoadWidth(maxLoadWidth) {}
+      height(height),
+      maxLoadWeight(maxLoadWeight)
+{
+}
 
 double Pallet::getLength() const
 {
     return length;
-}   
+}
 
 double Pallet::getWidth() const
 {
     return width;
 }
-double Pallet::getMaxLoadLength() const
+
+double Pallet::getHeight() const
 {
-    return maxLoadLength;
+    return height;
 }
-double Pallet::getMaxLoadWidth() const
+
+double Pallet::getMaxLoadWeight() const
 {
-    return maxLoadWidth;
+    return maxLoadWeight;
 }
