@@ -13,4 +13,6 @@ add_executable(palletization
     src/Pallet.cpp
     src/Placement.cpp
     src/Statistics.cpp
+    src/RowAlgorithm.cpp
+    src/Matrix4x4.cpp
 )

@@ -1,43 +1,36 @@
+#include <iostream>
+
 #include "Placement.h"
-Placement::Placement(int boxId,
-                     double x,
-                     double y,
-                     double length,
-                     double width,
-                     double rotation)
+
+using namespace std;
+
+Placement::Placement(
+    int boxId,
+    const Matrix4x4& pose)
     : boxId(boxId),
-      x(x),
-      y(y),
-      length(length),
-      width(width),
-      rotation(rotation) {}
+      pose(pose)
+{
+}
 
 int Placement::getBoxId() const
 {
     return boxId;
 }
 
-double Placement::getX() const
+Matrix4x4& Placement::getPose()
 {
-    return x;
+    return pose;
 }
 
-double Placement::getY() const
+const Matrix4x4& Placement::getPose() const
 {
-    return y;
+    return pose;
 }
 
-double Placement::getLength() const
+void Placement::print() const
 {
-    return length;
-}
+    cout << "Box ID: " << boxId << endl;
+    cout << "Pose Matrix:" << endl;
 
-double Placement::getWidth() const
-{
-    return width;
-}
-
-double Placement::getRotation() const
-{
-    return rotation;
+    pose.print();
 }

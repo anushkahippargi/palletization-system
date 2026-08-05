@@ -1,33 +1,26 @@
 #pragma once
 
+#include "Matrix4x4.h"
+
 class Placement
 {
 private:
+
     int boxId;
 
-    double x;
-    double y;
-
-    double length;
-    double width;
-
-    double rotation;
+    Matrix4x4 pose;
 
 public:
-    Placement(int boxId,
-              double x,
-              double y,
-              double length,
-              double width,
-              double rotation);
+
+    Placement(
+        int boxId,
+        const Matrix4x4& pose);
 
     int getBoxId() const;
 
-    double getX() const;
-    double getY() const;
+    Matrix4x4& getPose();
 
-    double getLength() const;
-    double getWidth() const;
+    const Matrix4x4& getPose() const;
 
-    double getRotation() const;
+    void print() const;
 };
