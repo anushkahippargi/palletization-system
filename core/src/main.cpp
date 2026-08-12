@@ -4,7 +4,9 @@
 #include "Pallet.h"
 #include "Placement.h"
 #include "PalletizationResult.h"
+#include "PalletStatistics.h"
 #include "RowAlgorithm.h"
+#include "Statistics.h"
 
 using namespace std;
 
@@ -17,57 +19,78 @@ int main()
         5.5);
 
     Pallet pallet(
-    1200,   // length
-    1000,   // width
-    150,    // pallet height
-    1000);  // maximum load weight (kg or your chosen unit)
+        1200,
+        1000,
+        300,
+        1000);
 
     RowAlgorithm algorithm;
 
+    // Test case:
+    // Pallet capacity = 40
+    // Requested boxes = 45
+    //
+    // Expected:
+    // Pallet 1 -> 40 boxes -> Full
+    // Pallet 2 -> 5 boxes  -> Partial
     PalletizationResult result =
         algorithm.generatePattern(
             pallet,
             box,
-            10);
+            45);
 
-    for (const Placement& placement : result.getPlacements())
+    // Display all placements.
+    for (const Placement& placement :
+         result.getPlacements())
     {
         placement.print();
+
         cout << endl;
     }
-    cout << "\nStatistics\n";
 
-const Statistics& statistics =
-    result.getStatistics();
-
-cout << "Total Boxes : "
-     << statistics.getTotalBoxes()
-     << endl;
-
-cout << "Used Pallets : "
-     << statistics.getUsedPallets()
-     << endl;
-
-for (const PalletStatistics& pallet :
-     statistics.getPalletStatistics())
-{
-    cout << "\nPallet "
-         << pallet.getPalletId()
+    // Display statistics.
+    cout << "\nStatistics"
          << endl;
 
-    cout << "Used Volume : "
-         << pallet.getUsedVolume()
+    const Statistics& statistics =
+        result.getStatistics();
+
+    cout << "Total Boxes : "
+         << statistics.getTotalBoxes()
          << endl;
 
-    cout << "Total Volume : "
-         << pallet.getTotalVolume()
+    cout << "Full Pallets : "
+         << statistics.getFullPallets()
          << endl;
 
-    cout << "Utilization : "
-         << pallet.getUtilization()
-         << "%"
-         << endl;
-}
+    // Only display statistics for the final
+    // pallet when it is partially filled.
+    if (statistics.hasLastPallet())
+    {
+        const PalletStatistics&
+            lastPallet =
+                statistics.getLastPalletStatistics();
+
+        cout << "\nLast Pallet"
+             << endl;
+
+        cout << "Pallet ID : "
+             << lastPallet.getPalletId()
+             << endl;
+
+        cout << "Used Volume : "
+             << lastPallet.getUsedVolume()
+             << endl;
+
+        cout << "Total Volume : "
+             << lastPallet.getTotalVolume()
+             << endl;
+
+        cout << "Utilization : "
+             << lastPallet.getUtilization()
+             << "%"
+             << endl;
+    }
 
     return 0;
 }

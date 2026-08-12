@@ -2,7 +2,9 @@
 
 Statistics::Statistics()
     : totalBoxes(0),
-      usedPallets(0)
+      fullPallets(0),
+      lastPalletStatistics(),
+      hasLastPalletStatistics(false)
 {
 }
 
@@ -11,19 +13,20 @@ int Statistics::getTotalBoxes() const
     return totalBoxes;
 }
 
-int Statistics::getUsedPallets() const
+int Statistics::getFullPallets() const
 {
-    return usedPallets;
+    return fullPallets;
 }
 
-vector<PalletStatistics>& Statistics::getPalletStatistics()
+bool Statistics::hasLastPallet() const
 {
-    return palletStatistics;
+    return hasLastPalletStatistics;
 }
 
-const vector<PalletStatistics>& Statistics::getPalletStatistics() const
+const PalletStatistics&
+Statistics::getLastPalletStatistics() const
 {
-    return palletStatistics;
+    return lastPalletStatistics;
 }
 
 void Statistics::setTotalBoxes(
@@ -32,14 +35,15 @@ void Statistics::setTotalBoxes(
     this->totalBoxes = totalBoxes;
 }
 
-void Statistics::setUsedPallets(
-    int usedPallets)
+void Statistics::setFullPallets(
+    int fullPallets)
 {
-    this->usedPallets = usedPallets;
+    this->fullPallets = fullPallets;
 }
 
-void Statistics::addPalletStatistics(
+void Statistics::setLastPalletStatistics(
     const PalletStatistics& statistics)
 {
-    palletStatistics.push_back(statistics);
+    this->lastPalletStatistics = statistics;
+    this->hasLastPalletStatistics = true;
 }

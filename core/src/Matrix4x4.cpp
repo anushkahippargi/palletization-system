@@ -1,9 +1,9 @@
-#include <iostream>
 #include <cmath>
+#include <iostream>
+
 #include "Matrix4x4.h"
 
 using namespace std;
-
 
 Matrix4x4::Matrix4x4()
 {
@@ -12,39 +12,13 @@ Matrix4x4::Matrix4x4()
 
 void Matrix4x4::setIdentity()
 {
-    for (int i = 0; i < 4; i++)
+    for (int row = 0; row < 4; row++)
     {
-        for (int j = 0; j < 4; j++)
+        for (int column = 0; column < 4; column++)
         {
-            if (i == j)
-            {
-                transform[i][j] = 1.0;
-            }
-            else
-            {
-                transform[i][j] = 0.0;
-            }
+            matrix[row][column] =
+                (row == column) ? 1.0 : 0.0;
         }
-    }
-}
-
-double Matrix4x4::getValue(
-    int row,
-    int column) const
-{
-    return transform[row][column];
-}
-
-void Matrix4x4::print() const
-{
-    for (int i = 0; i < 4; i++)
-    {
-        for (int j = 0; j < 4; j++)
-        {
-            cout << transform[i][j] << " ";
-        }
-
-        cout << endl;
     }
 }
 
@@ -53,30 +27,96 @@ void Matrix4x4::setTranslation(
     double y,
     double z)
 {
-    transform[0][3] = x;
+    matrix[0][3] = x;
+    matrix[1][3] = y;
+    matrix[2][3] = z;
+}
 
-    transform[1][3] = y;
+void Matrix4x4::setRotationX(
+    double angleDegrees)
+{
+    double angleRadians =
+        angleDegrees * M_PI / 180.0;
 
-    transform[2][3] = z;
+    double cosine =
+        cos(angleRadians);
+
+    double sine =
+        sin(angleRadians);
+
+    matrix[0][0] = 1.0;
+    matrix[0][1] = 0.0;
+    matrix[0][2] = 0.0;
+
+    matrix[1][0] = 0.0;
+    matrix[1][1] = cosine;
+    matrix[1][2] = -sine;
+
+    matrix[2][0] = 0.0;
+    matrix[2][1] = sine;
+    matrix[2][2] = cosine;
+}
+
+void Matrix4x4::setRotationY(
+    double angleDegrees)
+{
+    double angleRadians =
+        angleDegrees * M_PI / 180.0;
+
+    double cosine =
+        cos(angleRadians);
+
+    double sine =
+        sin(angleRadians);
+
+    matrix[0][0] = cosine;
+    matrix[0][1] = 0.0;
+    matrix[0][2] = sine;
+
+    matrix[1][0] = 0.0;
+    matrix[1][1] = 1.0;
+    matrix[1][2] = 0.0;
+
+    matrix[2][0] = -sine;
+    matrix[2][1] = 0.0;
+    matrix[2][2] = cosine;
 }
 
 void Matrix4x4::setRotationZ(
     double angleDegrees)
 {
-    const double PI = 3.14159265358979323846;
-
     double angleRadians =
-        angleDegrees * PI / 180.0;
+        angleDegrees * M_PI / 180.0;
 
-    transform[0][0] = cos(angleRadians);
-    transform[0][1] = -sin(angleRadians);
-    transform[0][2] = 0.0;
+    double cosine =
+        cos(angleRadians);
 
-    transform[1][0] = sin(angleRadians);
-    transform[1][1] = cos(angleRadians);
-    transform[1][2] = 0.0;
+    double sine =
+        sin(angleRadians);
 
-    transform[2][0] = 0.0;
-    transform[2][1] = 0.0;
-    transform[2][2] = 1.0;
+    matrix[0][0] = cosine;
+    matrix[0][1] = -sine;
+    matrix[0][2] = 0.0;
+
+    matrix[1][0] = sine;
+    matrix[1][1] = cosine;
+    matrix[1][2] = 0.0;
+
+    matrix[2][0] = 0.0;
+    matrix[2][1] = 0.0;
+    matrix[2][2] = 1.0;
+}
+
+void Matrix4x4::print() const
+{
+    for (int row = 0; row < 4; row++)
+    {
+        for (int column = 0; column < 4; column++)
+        {
+            cout << matrix[row][column]
+                 << " ";
+        }
+
+        cout << endl;
+    }
 }

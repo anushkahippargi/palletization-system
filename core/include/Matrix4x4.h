@@ -1,11 +1,10 @@
 #pragma once
 
-
 class Matrix4x4
 {
 private:
 
-    double transform[4][4];
+    double matrix[4][4];
 
 public:
 
@@ -18,12 +17,14 @@ public:
         double y,
         double z);
 
-    void setRotationZ(
+    void setRotationX(
         double angleDegrees);
 
-    double getValue(
-        int row,
-        int column) const;
+    void setRotationY(
+        double angleDegrees);
+
+    void setRotationZ(
+        double angleDegrees);
 
     void print() const;
 };

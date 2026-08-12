@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 #include "PalletStatistics.h"
 
 using namespace std;
@@ -12,9 +10,11 @@ private:
 
     int totalBoxes;
 
-    int usedPallets;
+    int fullPallets;
 
-    vector<PalletStatistics> palletStatistics;
+    PalletStatistics lastPalletStatistics;
+
+    bool hasLastPalletStatistics;
 
 public:
 
@@ -22,18 +22,18 @@ public:
 
     int getTotalBoxes() const;
 
-    int getUsedPallets() const;
+    int getFullPallets() const;
 
-    vector<PalletStatistics>& getPalletStatistics();
+    bool hasLastPallet() const;
 
-    const vector<PalletStatistics>& getPalletStatistics() const;
+    const PalletStatistics& getLastPalletStatistics() const;
 
     void setTotalBoxes(
         int totalBoxes);
 
-    void setUsedPallets(
-        int usedPallets);
+    void setFullPallets(
+        int fullPallets);
 
-    void addPalletStatistics(
+    void setLastPalletStatistics(
         const PalletStatistics& statistics);
 };
