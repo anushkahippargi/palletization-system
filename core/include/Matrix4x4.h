@@ -26,5 +26,9 @@ public:
     void setRotationZ(
         double angleDegrees);
 
+    double get(
+        int row,
+        int column) const;
+
     void print() const;
 };
