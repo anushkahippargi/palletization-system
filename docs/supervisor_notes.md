@@ -1,3 +1,9 @@
+28.08.2026
+ Development of other algorithms for box arrangement:
+ -Spiral-block pattern placement -the boxes are the same size and for simplicity the robot can grab only one box. 
+ https://share.google/aimode/fFpy8ARBEqdXHiUx7 - this is AI valid for 7 dayscement
+ https://www.researchgate.net/publication/263750924_Development_of_pallet_pattern_placement_strategies_in_robotic_palletisation
+
 07.08.2026
 -Replace in PalletStatistics: palletId with number of used pallets. Add statistics for the last pallet which will not be full.
 -In RowAlgorithm - choose which box size is bettter to use in arrangment. You are not fixed in using width of box for width of pallet and so on.
