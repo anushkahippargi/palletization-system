@@ -1,0 +1,897 @@
+#include "RowsColsAlgorithm.h"
+
+#include <algorithm>
+#include <cmath>
+
+using namespace std;
+
+
+// ============================================================
+// Calculate boxes along one dimension
+// ============================================================
+
+int RowsColsAlgorithm::calculateBoxesAlong(
+    double palletDimension,
+    double boxDimension) const
+{
+    if (boxDimension <= 0.0)
+    {
+        return 0;
+    }
+
+    return static_cast<int>(
+        floor(palletDimension / boxDimension)
+    );
+}
+
+
+// ============================================================
+// Generate one candidate
+// ============================================================
+
+RowsColsAlgorithm::Candidate
+RowsColsAlgorithm::generateCandidate(
+    const Pallet& pallet,
+    const Box& box,
+    int quantity,
+    const Orientation& orientation,
+    int normalColumns,
+    int normalRows,
+    int rotatedColumns,
+    int rotatedRows,
+    SplitDirection splitDirection) const
+{
+    Candidate candidate;
+
+    candidate.splitDirection = splitDirection;
+
+    candidate.normalColumns = normalColumns;
+    candidate.normalRows = normalRows;
+
+    candidate.rotatedColumns = rotatedColumns;
+    candidate.rotatedRows = rotatedRows;
+
+    candidate.orientation = orientation;
+
+    // Maximum capacity of this pattern
+    candidate.capacity =
+        normalColumns * normalRows +
+        rotatedColumns * rotatedRows;
+
+    if (splitDirection == SplitDirection::AlongLength)
+    {
+        // Normal and rotated sections are side-by-side
+        candidate.usedLength =
+            normalColumns * orientation.length +
+            rotatedColumns * orientation.width;
+
+        candidate.usedWidth =
+            max(
+                normalRows * orientation.width,
+                rotatedRows * orientation.length
+            );
+    }
+    else
+    {
+        // Normal and rotated sections are stacked
+        candidate.usedLength =
+            max(
+                normalColumns * orientation.length,
+                rotatedColumns * orientation.width
+            );
+
+        candidate.usedWidth =
+            normalRows * orientation.width +
+            rotatedRows * orientation.length;
+    }
+
+    double palletArea =
+        pallet.getLength() *
+        pallet.getWidth();
+
+    double usedArea =
+        candidate.usedLength *
+        candidate.usedWidth;
+
+    candidate.unusedArea =
+        palletArea - usedArea;
+
+    if (candidate.unusedArea < 0.0 &&
+        candidate.unusedArea > -0.000001)
+    {
+        candidate.unusedArea = 0.0;
+    }
+
+    candidate.layers =
+        calculateBoxesAlong(
+            pallet.getHeight(),
+            orientation.height
+        );
+
+    return candidate;
+}
+
+
+// ============================================================
+// MAIN ALGORITHM
+// ============================================================
+
+PalletizationResult RowsColsAlgorithm::generatePattern(
+    const Pallet& pallet,
+    const Box& box,
+    int quantity)
+{
+    PalletizationResult result;
+
+    if (quantity <= 0)
+    {
+        result.getStatistics().setTotalBoxes(0);
+        result.getStatistics().setFullPallets(0);
+        return result;
+    }
+
+    const double palletLength = pallet.getLength();
+    const double palletWidth = pallet.getWidth();
+    const double palletHeight = pallet.getHeight();
+
+    const double boxLength = box.getLength();
+    const double boxWidth = box.getWidth();
+    const double boxHeight = box.getHeight();
+
+    // ========================================================
+    // Two floor orientations
+    // ========================================================
+
+    Orientation orientation1{
+        boxLength,
+        boxWidth,
+        boxHeight,
+        0.0,
+        0.0,
+        0.0
+    };
+
+    Orientation orientation2{
+        boxWidth,
+        boxLength,
+        boxHeight,
+        0.0,
+        0.0,
+        90.0
+    };
+
+    Candidate bestCandidate;
+    bool hasCandidate = false;
+
+    // ========================================================
+    // Candidate comparison
+    // ========================================================
+
+    auto isBetterCandidate =
+        [](const Candidate& candidate,
+           const Candidate& best) -> bool
+    {
+        // 1. More boxes
+        if (candidate.capacity != best.capacity)
+        {
+            return candidate.capacity > best.capacity;
+        }
+
+        // 2. Less unused pallet area
+        if (fabs(candidate.unusedArea - best.unusedArea)
+            > 0.000001)
+        {
+            return candidate.unusedArea < best.unusedArea;
+        }
+
+        // 3. Fewer rotated boxes
+        int candidateRotated =
+            candidate.rotatedColumns *
+            candidate.rotatedRows;
+
+        int bestRotated =
+            best.rotatedColumns *
+            best.rotatedRows;
+
+        return candidateRotated < bestRotated;
+    };
+
+
+    // ========================================================
+    // Evaluate one orientation
+    // ========================================================
+
+    auto evaluateOrientation =
+        [&](const Orientation& orientation,
+            const Orientation& rotatedOrientation)
+    {
+        int maxNormalColumns =
+            calculateBoxesAlong(
+                palletLength,
+                orientation.length
+            );
+
+        int maxNormalRows =
+            calculateBoxesAlong(
+                palletWidth,
+                orientation.width
+            );
+
+        int maxRotatedColumns =
+            calculateBoxesAlong(
+                palletLength,
+                rotatedOrientation.length
+            );
+
+        int maxRotatedRows =
+            calculateBoxesAlong(
+                palletWidth,
+                rotatedOrientation.width
+            );
+
+
+        // ====================================================
+        // SPLIT ALONG LENGTH
+        // ====================================================
+
+        for (int nc = 0;
+             nc <= maxNormalColumns;
+             ++nc)
+        {
+            for (int nr = 0;
+                 nr <= maxNormalRows;
+                 ++nr)
+            {
+                for (int rc = 0;
+                     rc <= maxRotatedColumns;
+                     ++rc)
+                {
+                    for (int rr = 0;
+                         rr <= maxRotatedRows;
+                         ++rr)
+                    {
+                        // Use LOCAL variables.
+                        // Never modify the loop variables.
+                        int normalColumns = nc;
+                        int normalRows = nr;
+
+                        int rotatedColumns = rc;
+                        int rotatedRows = rr;
+
+                        // A section is either completely present
+                        // or completely absent.
+                        if (normalColumns == 0 ||
+                            normalRows == 0)
+                        {
+                            normalColumns = 0;
+                            normalRows = 0;
+                        }
+
+                        if (rotatedColumns == 0 ||
+                            rotatedRows == 0)
+                        {
+                            rotatedColumns = 0;
+                            rotatedRows = 0;
+                        }
+
+                        // Both sections empty
+                        if (normalColumns == 0 &&
+                            rotatedColumns == 0)
+                        {
+                            continue;
+                        }
+
+                        Candidate candidate =
+                            generateCandidate(
+                                pallet,
+                                box,
+                                quantity,
+                                orientation,
+                                normalColumns,
+                                normalRows,
+                                rotatedColumns,
+                                rotatedRows,
+                                SplitDirection::AlongLength
+                            );
+
+                        if (candidate.capacity <= 0)
+                        {
+                            continue;
+                        }
+
+                        if (candidate.usedLength >
+                                palletLength + 0.000001 ||
+                            candidate.usedWidth >
+                                palletWidth + 0.000001)
+                        {
+                            continue;
+                        }
+
+                        if (!hasCandidate ||
+                            isBetterCandidate(
+                                candidate,
+                                bestCandidate))
+                        {
+                            bestCandidate = candidate;
+                            hasCandidate = true;
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // ====================================================
+        // SPLIT ALONG WIDTH
+        // ====================================================
+
+        for (int nc = 0;
+             nc <= maxNormalColumns;
+             ++nc)
+        {
+            for (int nr = 0;
+                 nr <= maxNormalRows;
+                 ++nr)
+            {
+                for (int rc = 0;
+                     rc <= maxRotatedColumns;
+                     ++rc)
+                {
+                    for (int rr = 0;
+                         rr <= maxRotatedRows;
+                         ++rr)
+                    {
+                        // Local copies
+                        int normalColumns = nc;
+                        int normalRows = nr;
+
+                        int rotatedColumns = rc;
+                        int rotatedRows = rr;
+
+                        if (normalColumns == 0 ||
+                            normalRows == 0)
+                        {
+                            normalColumns = 0;
+                            normalRows = 0;
+                        }
+
+                        if (rotatedColumns == 0 ||
+                            rotatedRows == 0)
+                        {
+                            rotatedColumns = 0;
+                            rotatedRows = 0;
+                        }
+
+                        if (normalColumns == 0 &&
+                            rotatedColumns == 0)
+                        {
+                            continue;
+                        }
+
+                        Candidate candidate =
+                            generateCandidate(
+                                pallet,
+                                box,
+                                quantity,
+                                orientation,
+                                normalColumns,
+                                normalRows,
+                                rotatedColumns,
+                                rotatedRows,
+                                SplitDirection::AlongWidth
+                            );
+
+                        if (candidate.capacity <= 0)
+                        {
+                            continue;
+                        }
+
+                        if (candidate.usedLength >
+                                palletLength + 0.000001 ||
+                            candidate.usedWidth >
+                                palletWidth + 0.000001)
+                        {
+                            continue;
+                        }
+
+                        if (!hasCandidate ||
+                            isBetterCandidate(
+                                candidate,
+                                bestCandidate))
+                        {
+                            bestCandidate = candidate;
+                            hasCandidate = true;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+
+    // ========================================================
+    // Test both orientations
+    // ========================================================
+
+    evaluateOrientation(
+        orientation1,
+        orientation2
+    );
+
+    evaluateOrientation(
+        orientation2,
+        orientation1
+    );
+
+
+    // ========================================================
+    // No solution
+    // ========================================================
+
+    if (!hasCandidate)
+    {
+        result.getStatistics().setTotalBoxes(0);
+        result.getStatistics().setFullPallets(0);
+
+        return result;
+    }
+
+
+    // ========================================================
+    // Generate placements
+    // ========================================================
+
+    int boxesPlaced = 0;
+    int palletId = 1;
+    int fullPallets = 0;
+
+    const int boxesPerPallet =
+    bestCandidate.capacity *
+    bestCandidate.layers;
+    
+    const double boxVolume =
+        boxLength *
+        boxWidth *
+        boxHeight;
+
+    const double palletVolume =
+        palletLength *
+        palletWidth *
+        palletHeight;
+
+
+    while (boxesPlaced < quantity)
+    {
+        int boxesOnCurrentPallet = 0;
+
+        int boxesNeeded =
+            min(
+                boxesPerPallet,
+                quantity - boxesPlaced
+            );
+
+
+        // ====================================================
+        // Center complete pattern
+        // ====================================================
+
+        double lengthOffset =
+            max(
+                0.0,
+                (palletLength -
+                 bestCandidate.usedLength) / 2.0
+            );
+
+        double widthOffset =
+            max(
+                0.0,
+                (palletWidth -
+                 bestCandidate.usedWidth) / 2.0
+            );
+
+
+        // ====================================================
+        // Generate layers
+        // ====================================================
+
+        for (int layer = 0;
+             layer < bestCandidate.layers &&
+             boxesOnCurrentPallet < boxesNeeded;
+             ++layer)
+        {
+            double z =
+                layer *
+                bestCandidate.orientation.height;
+
+            // Alternate layers
+            bool flipped =
+                (layer % 2 == 1);
+
+
+            // =================================================
+            // SPLIT ALONG LENGTH
+            // =================================================
+
+            if (bestCandidate.splitDirection ==
+                SplitDirection::AlongLength)
+            {
+                // ---------------------------------------------
+                // Normal section
+                // ---------------------------------------------
+
+                for (int row = 0;
+                     row < bestCandidate.normalRows &&
+                     boxesOnCurrentPallet < boxesNeeded;
+                     ++row)
+                {
+                    for (int column = 0;
+                         column < bestCandidate.normalColumns &&
+                         boxesOnCurrentPallet < boxesNeeded;
+                         ++column)
+                    {
+                        double x =
+                            lengthOffset +
+                            column *
+                            bestCandidate.orientation.length;
+
+                        double y =
+                            widthOffset +
+                            row *
+                            bestCandidate.orientation.width;
+
+                        double rotation =
+                            bestCandidate.orientation.rotationZ;
+
+
+                        // Flip alternate layers
+                        if (flipped)
+                        {
+                            x =
+                                palletLength -
+                                lengthOffset -
+                                bestCandidate.orientation.length -
+                                column *
+                                bestCandidate.orientation.length;
+
+                            y =
+                                palletWidth -
+                                widthOffset -
+                                bestCandidate.orientation.width -
+                                row *
+                                bestCandidate.orientation.width;
+
+                            rotation += 180.0;
+                        }
+
+
+                        Matrix4x4 pose;
+
+                        pose.setTranslation(
+                            x,
+                            y,
+                            z
+                        );
+
+                        if (rotation != 0.0)
+                        {
+                            pose.setRotationZ(rotation);
+                        }
+
+
+                        Placement placement(
+                            boxesPlaced + 1,
+                            palletId,
+                            pose
+                        );
+
+                        result.getPlacements()
+                            .push_back(placement);
+
+                        ++boxesPlaced;
+                        ++boxesOnCurrentPallet;
+                    }
+                }
+
+
+                // ---------------------------------------------
+                // Rotated section
+                // ---------------------------------------------
+
+                double rotatedStartX =
+                    lengthOffset +
+                    bestCandidate.normalColumns *
+                    bestCandidate.orientation.length;
+
+                double rotatedStartY =
+                    widthOffset;
+
+
+                for (int row = 0;
+                     row < bestCandidate.rotatedRows &&
+                     boxesOnCurrentPallet < boxesNeeded;
+                     ++row)
+                {
+                    for (int column = 0;
+                         column < bestCandidate.rotatedColumns &&
+                         boxesOnCurrentPallet < boxesNeeded;
+                         ++column)
+                    {
+                        double x =
+                            rotatedStartX +
+                            column *
+                            bestCandidate.orientation.width;
+
+                        double y =
+                            rotatedStartY +
+                            row *
+                            bestCandidate.orientation.length;
+
+                        double rotation =
+                            bestCandidate.orientation.rotationZ +
+                            90.0;
+
+
+                        if (flipped)
+                        {
+                            x =
+                                palletLength -
+                                rotatedStartX -
+                                bestCandidate.orientation.width -
+                                column *
+                                bestCandidate.orientation.width;
+
+                            y =
+                                palletWidth -
+                                rotatedStartY -
+                                bestCandidate.orientation.length -
+                                row *
+                                bestCandidate.orientation.length;
+
+                            rotation += 180.0;
+                        }
+
+
+                        Matrix4x4 pose;
+
+                        pose.setTranslation(
+                            x,
+                            y,
+                            z
+                        );
+
+                        pose.setRotationZ(rotation);
+
+
+                        Placement placement(
+                            boxesPlaced + 1,
+                            palletId,
+                            pose
+                        );
+
+                        result.getPlacements()
+                            .push_back(placement);
+
+                        ++boxesPlaced;
+                        ++boxesOnCurrentPallet;
+                    }
+                }
+            }
+
+
+            // =================================================
+            // SPLIT ALONG WIDTH
+            // =================================================
+
+            else
+            {
+                // ---------------------------------------------
+                // Normal section
+                // ---------------------------------------------
+
+                for (int row = 0;
+                     row < bestCandidate.normalRows &&
+                     boxesOnCurrentPallet < boxesNeeded;
+                     ++row)
+                {
+                    for (int column = 0;
+                         column < bestCandidate.normalColumns &&
+                         boxesOnCurrentPallet < boxesNeeded;
+                         ++column)
+                    {
+                        double x =
+                            lengthOffset +
+                            column *
+                            bestCandidate.orientation.length;
+
+                        double y =
+                            widthOffset +
+                            row *
+                            bestCandidate.orientation.width;
+
+                        double rotation =
+                            bestCandidate.orientation.rotationZ;
+
+
+                        if (flipped)
+                        {
+                            x =
+                                palletLength -
+                                lengthOffset -
+                                bestCandidate.orientation.length -
+                                column *
+                                bestCandidate.orientation.length;
+
+                            y =
+                                palletWidth -
+                                widthOffset -
+                                bestCandidate.orientation.width -
+                                row *
+                                bestCandidate.orientation.width;
+
+                            rotation += 180.0;
+                        }
+
+
+                        Matrix4x4 pose;
+
+                        pose.setTranslation(
+                            x,
+                            y,
+                            z
+                        );
+
+                        if (rotation != 0.0)
+                        {
+                            pose.setRotationZ(rotation);
+                        }
+
+
+                        Placement placement(
+                            boxesPlaced + 1,
+                            palletId,
+                            pose
+                        );
+
+                        result.getPlacements()
+                            .push_back(placement);
+
+                        ++boxesPlaced;
+                        ++boxesOnCurrentPallet;
+                    }
+                }
+
+
+                // ---------------------------------------------
+                // Rotated section
+                // ---------------------------------------------
+
+                double rotatedStartX =
+                    lengthOffset;
+
+                double rotatedStartY =
+                    widthOffset +
+                    bestCandidate.normalRows *
+                    bestCandidate.orientation.width;
+
+
+                for (int row = 0;
+                     row < bestCandidate.rotatedRows &&
+                     boxesOnCurrentPallet < boxesNeeded;
+                     ++row)
+                {
+                    for (int column = 0;
+                         column < bestCandidate.rotatedColumns &&
+                         boxesOnCurrentPallet < boxesNeeded;
+                         ++column)
+                    {
+                        double x =
+                            rotatedStartX +
+                            column *
+                            bestCandidate.orientation.width;
+
+                        double y =
+                            rotatedStartY +
+                            row *
+                            bestCandidate.orientation.length;
+
+                        double rotation =
+                            bestCandidate.orientation.rotationZ +
+                            90.0;
+
+
+                        if (flipped)
+                        {
+                            x =
+                                palletLength -
+                                rotatedStartX -
+                                bestCandidate.orientation.width -
+                                column *
+                                bestCandidate.orientation.width;
+
+                            y =
+                                palletWidth -
+                                rotatedStartY -
+                                bestCandidate.orientation.length -
+                                row *
+                                bestCandidate.orientation.length;
+
+                            rotation += 180.0;
+                        }
+
+
+                        Matrix4x4 pose;
+
+                        pose.setTranslation(
+                            x,
+                            y,
+                            z
+                        );
+
+                        pose.setRotationZ(rotation);
+
+
+                        Placement placement(
+                            boxesPlaced + 1,
+                            palletId,
+                            pose
+                        );
+
+                        result.getPlacements()
+                            .push_back(placement);
+
+                        ++boxesPlaced;
+                        ++boxesOnCurrentPallet;
+                    }
+                }
+            }
+        }
+
+
+        // ====================================================
+        // Statistics
+        // ====================================================
+
+        double usedVolume =
+            boxesOnCurrentPallet *
+            boxVolume;
+
+        PalletStatistics lastPallet(
+            palletId,
+            usedVolume,
+            palletVolume
+        );
+
+        result.getStatistics()
+            .setLastPalletStatistics(
+                lastPallet
+            );
+
+
+        if (boxesOnCurrentPallet >= boxesPerPallet)
+        {
+            ++fullPallets;
+        }
+
+
+        // Safety
+        if (boxesOnCurrentPallet == 0)
+        {
+            break;
+        }
+
+        ++palletId;
+    }
+
+
+    // ========================================================
+    // Final statistics
+    // ========================================================
+
+    result.getStatistics()
+        .setTotalBoxes(boxesPlaced);
+
+    result.getStatistics()
+        .setFullPallets(fullPallets);
+
+    return result;
+}

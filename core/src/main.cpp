@@ -8,7 +8,10 @@
 #include "PalletizationResult.h"
 #include "PalletStatistics.h"
 #include "RowAlgorithm.h"
+#include "RowsColsAlgorithm.h"
 #include "Statistics.h"
+#include "WheelAlgorithm.h"
+#include "WheelInnerFillAlgorithm.h"
 
 using namespace std;
 
@@ -18,11 +21,18 @@ using namespace std;
  * JSON OUTPUT
  * ============================================================
  *
- * Converts the actual PalletizationResult produced by the
- * RowAlgorithm into JSON.
+ * Converts the PalletizationResult produced by the
+ * selected algorithm into JSON.
  *
- * This is what the React 3D visualization will eventually use.
+ * Supported algorithms:
+ *
+ *     rows
+ *     rowscols
+ *
+ * The React 3D visualization can use the same JSON structure
+ * regardless of which algorithm produced the result.
  */
+
 void printJson(
     const PalletizationResult& result,
     const Box& box,
@@ -141,7 +151,8 @@ void printJson(
      * PLACEMENTS
      * --------------------------------------------------------
      *
-     * Every placement comes directly from the RO algorithm.
+     * Every placement comes from whichever algorithm
+     * was selected.
      */
 
     cout << "\"placements\":[";
@@ -268,7 +279,7 @@ int main(int argc, char* argv[])
      * CUSTOM JSON MODE
      * ========================================================
      *
-     * Usage:
+     * Existing usage:
      *
      * ./palletization --json \
      *     numberOfBoxes \
@@ -279,47 +290,103 @@ int main(int argc, char* argv[])
      *     palletWidth \
      *     palletHeight
      *
-     * Example:
      *
-     * ./palletization --json 45 300 200 150 1200 1000 300
+     * New usage:
      *
-     * This executes the actual RO algorithm using the
-     * supplied dimensions.
+     * ./palletization --json rowscols \
+     *     numberOfBoxes \
+     *     boxLength \
+     *     boxWidth \
+     *     boxHeight \
+     *     palletLength \
+     *     palletWidth \
+     *     palletHeight
+     *
+     *
+     * Examples:
+     *
+     * Existing Rows algorithm:
+     *
+     * ./palletization --json \
+     *     45 300 200 150 1200 1000 300
+     *
+     *
+     * New Rows + Columns algorithm:
+     *
+     * ./palletization --json rowscols \
+     *     45 300 200 150 1200 1000 300
      */
 
-    if (argc == 9 &&
+    if ((argc == 9 || argc == 10) &&
         string(argv[1]) == "--json")
     {
         try
         {
             /*
-             * Read custom input.
+             * ------------------------------------------------
+             * Determine which algorithm to use.
+             * ------------------------------------------------
+             *
+             * If no algorithm is supplied,
+             * default to the existing Rows algorithm.
              */
 
-            int quantity =
-                stoi(argv[2]);
+            string algorithmName = "rows";
 
-            double boxLength =
-                stod(argv[3]);
-
-            double boxWidth =
-                stod(argv[4]);
-
-            double boxHeight =
-                stod(argv[5]);
-
-            double palletLength =
-                stod(argv[6]);
-
-            double palletWidth =
-                stod(argv[7]);
-
-            double palletHeight =
-                stod(argv[8]);
+            int inputIndex = 2;
 
 
             /*
+             * If argc == 10, the third argument
+             * is the algorithm name.
+             *
+             * Example:
+             *
+             * argv[2] = "rowscols"
+             * argv[3] = quantity
+             */
+
+            if (argc == 10)
+            {
+                algorithmName =
+                    argv[2];
+
+                inputIndex = 3;
+            }
+
+
+            /*
+             * ------------------------------------------------
+             * Read custom input.
+             * ------------------------------------------------
+             */
+
+            int quantity =
+                stoi(argv[inputIndex]);
+
+            double boxLength =
+                stod(argv[inputIndex + 1]);
+
+            double boxWidth =
+                stod(argv[inputIndex + 2]);
+
+            double boxHeight =
+                stod(argv[inputIndex + 3]);
+
+            double palletLength =
+                stod(argv[inputIndex + 4]);
+
+            double palletWidth =
+                stod(argv[inputIndex + 5]);
+
+            double palletHeight =
+                stod(argv[inputIndex + 6]);
+
+
+            /*
+             * ------------------------------------------------
              * Basic validation.
+             * ------------------------------------------------
              */
 
             if (quantity <= 0 ||
@@ -340,7 +407,9 @@ int main(int argc, char* argv[])
 
 
             /*
-             * Create Box using custom dimensions.
+             * ------------------------------------------------
+             * Create Box.
+             * ------------------------------------------------
              *
              * Weight remains the existing test value
              * because the current frontend does not
@@ -355,11 +424,13 @@ int main(int argc, char* argv[])
 
 
             /*
-             * Create Pallet using custom dimensions.
+             * ------------------------------------------------
+             * Create Pallet.
+             * ------------------------------------------------
              *
-             * Pallet weight remains the existing
-             * value because the current frontend
-             * does not provide it.
+             * Pallet weight remains the existing test
+             * value because the current frontend does
+             * not provide it.
              */
 
             Pallet pallet(
@@ -370,19 +441,15 @@ int main(int argc, char* argv[])
 
 
             /*
-             * Run the actual RO algorithm.
-             */
-
-            RowAlgorithm algorithm;
-
-
-            /*
-             * RowAlgorithm currently prints diagnostic
-             * information to cout.
+             * ------------------------------------------------
+             * Temporarily redirect cout.
+             * ------------------------------------------------
              *
-             * JSON mode must return ONLY JSON.
+             * Some algorithms print diagnostic information.
              *
-             * Therefore temporarily redirect cout
+             * JSON mode must output ONLY JSON.
+             *
+             * Therefore we temporarily redirect cout
              * while the algorithm is running.
              */
 
@@ -393,15 +460,81 @@ int main(int argc, char* argv[])
                     debugOutput.rdbuf());
 
 
-            PalletizationResult result =
-                algorithm.generatePattern(
-                    pallet,
-                    box,
-                    quantity);
+            /*
+             * ------------------------------------------------
+             * Run selected algorithm.
+             * ------------------------------------------------
+             */
+
+            PalletizationResult result;
 
 
             /*
+             * Existing Rows algorithm
+             */
+
+if (algorithmName == "rows")
+{
+    RowAlgorithm algorithm;
+
+    result = algorithm.generatePattern(
+        pallet,
+        box,
+        quantity
+    );
+}
+else if (algorithmName == "rowscols")
+{
+    RowsColsAlgorithm algorithm;
+
+    result = algorithm.generatePattern(
+        pallet,
+        box,
+        quantity
+    );
+}
+else if (algorithmName == "wheel")
+{
+    WheelAlgorithm algorithm;
+
+    result = algorithm.generatePattern(
+        pallet,
+        box,
+        quantity
+    );
+}
+else if (algorithmName == "wheelinnerfill")
+{
+    WheelInnerFillAlgorithm algorithm;
+
+    result = algorithm.generatePattern(
+        pallet,
+        box,
+        quantity
+    );
+}
+else
+{
+    std::cerr
+        << "Unknown algorithm: "
+        << algorithmName
+        << std::endl;
+
+    std::cerr
+        << "Available algorithms: "
+        << "rows, "
+        << "rowscols, "
+        << "wheel, "
+        << "wheelinnerfill"
+        << std::endl;
+
+    return 1;
+}
+
+            /*
+             * ------------------------------------------------
              * Restore cout.
+             * ------------------------------------------------
              */
 
             cout.rdbuf(
@@ -409,8 +542,9 @@ int main(int argc, char* argv[])
 
 
             /*
-             * Output the actual algorithm result
-             * as JSON.
+             * ------------------------------------------------
+             * Output actual algorithm result as JSON.
+             * ------------------------------------------------
              */
 
             printJson(
@@ -445,7 +579,10 @@ int main(int argc, char* argv[])
      *
      * ./palletization
      *
-     * still performs the existing 45-box test.
+     * still performs the existing 45-box test
+     * using the original RowAlgorithm.
+     *
+     * This means we have NOT broken the old behavior.
      */
 
     Box box(
@@ -461,6 +598,11 @@ int main(int argc, char* argv[])
         300,
         1000);
 
+
+    /*
+     * Keep the default test using the existing
+     * RowAlgorithm.
+     */
 
     RowAlgorithm algorithm;
 
@@ -485,7 +627,9 @@ int main(int argc, char* argv[])
 
 
     /*
+     * --------------------------------------------------------
      * Display all placements.
+     * --------------------------------------------------------
      */
 
     for (const Placement& placement :
@@ -498,7 +642,9 @@ int main(int argc, char* argv[])
 
 
     /*
+     * --------------------------------------------------------
      * Display statistics.
+     * --------------------------------------------------------
      */
 
     cout << "\nStatistics"
