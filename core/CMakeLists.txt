@@ -32,4 +32,6 @@ add_executable(palletization
     src/PalletizationResult.cpp
 
     src/PalletStatistics.cpp
+
+    src/BricksAlgorithm.cpp
 )

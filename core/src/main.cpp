@@ -12,6 +12,7 @@
 #include "Statistics.h"
 #include "WheelAlgorithm.h"
 #include "WheelInnerFillAlgorithm.h"
+#include "BricksAlgorithm.h"
 
 using namespace std;
 
@@ -512,6 +513,14 @@ else if (algorithmName == "wheelinnerfill")
         box,
         quantity
     );
+}
+else if (algorithmName == "bricks")
+{
+    BricksAlgorithm algorithm;
+    result = algorithm.generatePattern(
+        pallet,
+        box,
+        quantity);
 }
 else
 {
