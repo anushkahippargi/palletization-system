@@ -1,3 +1,4 @@
+
 import express from "express";
 import cors from "cors";
 import { execFile } from "child_process";
@@ -9,7 +10,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-
 // ============================================================
 // ES Module __dirname setup
 // ============================================================
@@ -17,16 +17,18 @@ app.use(express.json());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
 // ============================================================
 // Palletization API
 // ============================================================
 
 app.post("/api/palletize", (req, res) => {
-
     const {
         algorithm = "rows",
         boxCount,
+        box,
+        pallet,
+
+        // Also accept the older flat request format
         boxLength,
         boxWidth,
         boxHeight,
@@ -35,6 +37,14 @@ app.post("/api/palletize", (req, res) => {
         palletHeight
     } = req.body;
 
+    // Support both nested and flat request formats
+    const actualBoxLength = box?.length ?? boxLength;
+    const actualBoxWidth = box?.width ?? boxWidth;
+    const actualBoxHeight = box?.height ?? boxHeight;
+
+    const actualPalletLength = pallet?.length ?? palletLength;
+    const actualPalletWidth = pallet?.width ?? palletWidth;
+    const actualPalletHeight = pallet?.height ?? palletHeight;
 
     // ----------------------------------------------------------
     // Validate algorithm
@@ -42,15 +52,18 @@ app.post("/api/palletize", (req, res) => {
 
     const allowedAlgorithms = [
         "rows",
-        "rowscols"
+        "rowscols",
+        "wheel",
+        "wheelinnerfill",
+        "bricks"
     ];
 
     if (!allowedAlgorithms.includes(algorithm)) {
         return res.status(400).json({
-            error: "Invalid algorithm. Use 'rows' or 'rowscols'."
+            error:
+                "Invalid algorithm. Use rows, rowscols, wheel, wheelinnerfill, or bricks."
         });
     }
-
 
     // ----------------------------------------------------------
     // Validate input values
@@ -58,27 +71,31 @@ app.post("/api/palletize", (req, res) => {
 
     const values = [
         boxCount,
-        boxLength,
-        boxWidth,
-        boxHeight,
-        palletLength,
-        palletWidth,
-        palletHeight
+        actualBoxLength,
+        actualBoxWidth,
+        actualBoxHeight,
+        actualPalletLength,
+        actualPalletWidth,
+        actualPalletHeight
     ];
 
-    if (
-        values.some(
-            value =>
-                value === undefined ||
-                value === null ||
-                Number(value) <= 0
-        )
-    ) {
+    const invalidValues = values.some((value) => {
+        const number = Number(value);
+
+        return (
+            value === undefined ||
+            value === null ||
+            value === "" ||
+            !Number.isFinite(number) ||
+            number <= 0
+        );
+    });
+
+    if (invalidValues) {
         return res.status(400).json({
             error: "All box and pallet values must be greater than 0."
         });
     }
-
 
     // ----------------------------------------------------------
     // C++ executable
@@ -91,7 +108,6 @@ app.post("/api/palletize", (req, res) => {
         "palletization"
     );
 
-
     // ----------------------------------------------------------
     // Arguments sent to C++
     // ----------------------------------------------------------
@@ -100,23 +116,16 @@ app.post("/api/palletize", (req, res) => {
         "--json",
         algorithm,
         String(boxCount),
-        String(boxLength),
-        String(boxWidth),
-        String(boxHeight),
-        String(palletLength),
-        String(palletWidth),
-        String(palletHeight)
+        String(actualBoxLength),
+        String(actualBoxWidth),
+        String(actualBoxHeight),
+        String(actualPalletLength),
+        String(actualPalletWidth),
+        String(actualPalletHeight)
     ];
 
-
-    console.log(
-        `Running algorithm: ${algorithm}`
-    );
-
-    console.log(
-        `Arguments: ${args.join(" ")}`
-    );
-
+    console.log(`Running algorithm: ${algorithm}`);
+    console.log(`Arguments: ${args.join(" ")}`);
 
     // ----------------------------------------------------------
     // Run C++ executable
@@ -126,18 +135,9 @@ app.post("/api/palletize", (req, res) => {
         executablePath,
         args,
         (error, stdout, stderr) => {
-
             if (error) {
-
-                console.error(
-                    "Palletization error:",
-                    error
-                );
-
-                console.error(
-                    "C++ stderr:",
-                    stderr
-                );
+                console.error("Palletization error:", error);
+                console.error("C++ stderr:", stderr);
 
                 return res.status(500).json({
                     error: "Palletization failed.",
@@ -145,24 +145,17 @@ app.post("/api/palletize", (req, res) => {
                 });
             }
 
-
             // --------------------------------------------------
             // Parse C++ JSON
             // --------------------------------------------------
 
             try {
-
-                const result =
-                    JSON.parse(stdout);
-
+                const result = JSON.parse(stdout);
                 return res.json(result);
-
             } catch (parseError) {
-
                 console.error(
                     "Invalid JSON received from C++:"
                 );
-
                 console.error(stdout);
 
                 return res.status(500).json({
@@ -175,20 +168,16 @@ app.post("/api/palletize", (req, res) => {
     );
 });
 
-
 // ============================================================
 // Health check
 // ============================================================
 
 app.get("/api/health", (req, res) => {
-
     res.json({
         status: "ok",
         message: "Palletization backend is running."
     });
-
 });
-
 
 // ============================================================
 // Start server
@@ -197,9 +186,5 @@ app.get("/api/health", (req, res) => {
 const PORT = 3001;
 
 app.listen(PORT, () => {
-
-    console.log(
-        `Palletization server running on port ${PORT}`
-    );
-
+    console.log(`Palletization server running on port ${PORT}`);
 });

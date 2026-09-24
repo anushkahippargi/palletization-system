@@ -1,3 +1,4 @@
+
 import { useCallback, useState } from "react";
 import "./App.css";
 import PalletScene from "./components/PalletScene";
@@ -13,28 +14,24 @@ function App() {
     palletHeight: 300,
   });
 
+  const [algorithm, setAlgorithm] = useState("rows");
+
   const [page, setPage] = useState("home");
-
   const [result, setResult] = useState(null);
-
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState("");
 
-  const [animationKey, setAnimationKey] =
-    useState(0);
+  const [animationKey, setAnimationKey] = useState(0);
 
-  const [animationState, setAnimationState] =
-    useState({
-      placedCount: 0,
-      playing: false,
-    });
+  const [animationState, setAnimationState] = useState({
+    placedCount: 0,
+    playing: false,
+  });
 
-  const [animationCommand, setAnimationCommand] =
-    useState({
-      type: "none",
-      id: 0,
-    });
+  const [animationCommand, setAnimationCommand] = useState({
+    type: "none",
+    id: 0,
+  });
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -44,11 +41,6 @@ function App() {
       [name]: Number(value),
     }));
   };
-
-  /*
-   * Send the user's custom input
-   * to the C++ backend.
-   */
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -61,12 +53,12 @@ function App() {
         "http://localhost:3001/api/palletize",
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
           },
-
           body: JSON.stringify({
+            algorithm,
+
             boxCount: form.boxCount,
 
             box: {
@@ -84,8 +76,7 @@ function App() {
         }
       );
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -94,16 +85,7 @@ function App() {
         );
       }
 
-      /*
-       * Save the REAL output
-       * returned by the C++ algorithm.
-       */
-
       setResult(data);
-
-      /*
-       * Reset animation state.
-       */
 
       setAnimationState({
         placedCount: 0,
@@ -115,13 +97,7 @@ function App() {
         id: Date.now(),
       });
 
-      setAnimationKey(
-        (previous) => previous + 1
-      );
-
-      /*
-       * Move to visualization page.
-       */
+      setAnimationKey((previous) => previous + 1);
 
       setPage("visualization");
     } catch (error) {
@@ -157,44 +133,34 @@ function App() {
     });
   };
 
-  const handleAnimationState =
-    useCallback((state) => {
-      setAnimationState((previous) => {
-        if (
-          previous.placedCount ===
-            state.placedCount &&
-          previous.playing ===
-            state.playing
-        ) {
-          return previous;
-        }
+  const handleAnimationState = useCallback((state) => {
+    setAnimationState((previous) => {
+      if (
+        previous.placedCount === state.placedCount &&
+        previous.playing === state.playing
+      ) {
+        return previous;
+      }
 
-        return state;
-      });
-    }, []);
+      return state;
+    });
+  }, []);
 
   const totalBoxes =
-    result?.placements?.length ||
-    form.boxCount;
+    result?.placements?.length || form.boxCount;
 
   const isComplete =
-    animationState.placedCount >=
-    totalBoxes;
+    animationState.placedCount >= totalBoxes;
 
   /*
-   * =====================================
    * HOME PAGE
-   * =====================================
    */
 
   if (page === "home") {
     return (
       <div className="app">
-
         <header className="header">
-
           <div className="header-content">
-
             <p className="eyebrow">
               PALLETIZATION SYSTEM
             </p>
@@ -205,20 +171,15 @@ function App() {
 
             <p className="subtitle">
               Configure your boxes and pallet dimensions,
-              then generate an optimized three-dimensional
-              pallet arrangement.
+              select a palletization algorithm, and generate
+              a three-dimensional pallet arrangement.
             </p>
-
           </div>
-
         </header>
 
         <main className="home-main">
-
           <section className="input-panel">
-
             <div className="section-heading">
-
               <p className="section-label">
                 CONFIGURATION
               </p>
@@ -228,16 +189,14 @@ function App() {
               </h2>
 
               <p>
-                Enter the box and pallet dimensions to
-                generate the optimized arrangement.
+                Enter the box and pallet dimensions and
+                choose an algorithm to generate the
+                arrangement.
               </p>
-
             </div>
 
             <form onSubmit={handleSubmit}>
-
               <div className="input-group full-width">
-
                 <label htmlFor="boxCount">
                   Number of Boxes
                 </label>
@@ -247,16 +206,14 @@ function App() {
                   name="boxCount"
                   type="number"
                   min="1"
+                  required
                   value={form.boxCount}
                   onChange={handleChange}
                 />
-
               </div>
 
               <div className="dimension-section">
-
                 <div className="dimension-heading">
-
                   <span>
                     Box Dimensions
                   </span>
@@ -264,13 +221,10 @@ function App() {
                   <small>
                     Length × Width × Height
                   </small>
-
                 </div>
 
                 <div className="dimension-grid">
-
                   <div className="input-group">
-
                     <label htmlFor="boxLength">
                       Length
                     </label>
@@ -280,14 +234,13 @@ function App() {
                       name="boxLength"
                       type="number"
                       min="1"
+                      required
                       value={form.boxLength}
                       onChange={handleChange}
                     />
-
                   </div>
 
                   <div className="input-group">
-
                     <label htmlFor="boxWidth">
                       Width
                     </label>
@@ -297,14 +250,13 @@ function App() {
                       name="boxWidth"
                       type="number"
                       min="1"
+                      required
                       value={form.boxWidth}
                       onChange={handleChange}
                     />
-
                   </div>
 
                   <div className="input-group">
-
                     <label htmlFor="boxHeight">
                       Height
                     </label>
@@ -314,20 +266,16 @@ function App() {
                       name="boxHeight"
                       type="number"
                       min="1"
+                      required
                       value={form.boxHeight}
                       onChange={handleChange}
                     />
-
                   </div>
-
                 </div>
-
               </div>
 
               <div className="dimension-section">
-
                 <div className="dimension-heading">
-
                   <span>
                     Pallet Dimensions
                   </span>
@@ -335,13 +283,10 @@ function App() {
                   <small>
                     Length × Width × Height
                   </small>
-
                 </div>
 
                 <div className="dimension-grid">
-
                   <div className="input-group">
-
                     <label htmlFor="palletLength">
                       Length
                     </label>
@@ -351,14 +296,13 @@ function App() {
                       name="palletLength"
                       type="number"
                       min="1"
+                      required
                       value={form.palletLength}
                       onChange={handleChange}
                     />
-
                   </div>
 
                   <div className="input-group">
-
                     <label htmlFor="palletWidth">
                       Width
                     </label>
@@ -368,14 +312,13 @@ function App() {
                       name="palletWidth"
                       type="number"
                       min="1"
+                      required
                       value={form.palletWidth}
                       onChange={handleChange}
                     />
-
                   </div>
 
                   <div className="input-group">
-
                     <label htmlFor="palletHeight">
                       Height
                     </label>
@@ -385,14 +328,62 @@ function App() {
                       name="palletHeight"
                       type="number"
                       min="1"
+                      required
                       value={form.palletHeight}
                       onChange={handleChange}
                     />
-
                   </div>
+                </div>
+              </div>
 
+              {/* ALGORITHM SELECTION */}
+
+              <div className="dimension-section">
+                <div className="dimension-heading">
+                  <span>
+                    Palletization Algorithm
+                  </span>
+
+                  <small>
+                    Select an arrangement method
+                  </small>
                 </div>
 
+                <div className="input-group full-width">
+                  <label htmlFor="algorithm">
+                    Choose Algorithm
+                  </label>
+
+                  <select
+                    id="algorithm"
+                    name="algorithm"
+                    value={algorithm}
+                    onChange={(event) =>
+                      setAlgorithm(event.target.value)
+                    }
+                    required
+                  >
+                    <option value="rows">
+                      Rows
+                    </option>
+
+                    <option value="rowscols">
+                      RowsCols
+                    </option>
+
+                    <option value="wheel">
+                      Wheel
+                    </option>
+
+                    <option value="wheelinnerfill">
+                      Wheel with Inner Fill
+                    </option>
+
+                    <option value="bricks">
+                      Bricks
+                    </option>
+                  </select>
+                </div>
               </div>
 
               {error && (
@@ -410,42 +401,30 @@ function App() {
                   ? "Generating Arrangement..."
                   : "Optimize & Visualize"}
               </button>
-
             </form>
-
           </section>
-
         </main>
-
       </div>
     );
   }
 
   /*
-   * =====================================
    * VISUALIZATION PAGE
-   * =====================================
    */
 
   return (
     <div className="visualization-page">
-
       <header className="visualization-page-header">
-
         <div>
-
           <button
             className="back-button"
             type="button"
-            onClick={() => {
-              setPage("home");
-            }}
+            onClick={() => setPage("home")}
           >
             Back to Configuration
           </button>
 
           <div className="visualization-title">
-
             <p className="eyebrow">
               3D VISUALIZATION
             </p>
@@ -454,8 +433,16 @@ function App() {
               Optimized Pallet Arrangement
             </h1>
 
+            <p>
+              Algorithm:{" "}
+              {algorithm === "wheelinnerfill"
+                ? "Wheel with Inner Fill"
+                : algorithm === "rowscols"
+                ? "RowsCols"
+                : algorithm.charAt(0).toUpperCase() +
+                  algorithm.slice(1)}
+            </p>
           </div>
-
         </div>
 
         <div
@@ -473,32 +460,22 @@ function App() {
             ? "Complete"
             : "Ready"}
         </div>
-
       </header>
 
       <main className="visualization-main">
-
         <section className="scene-section">
-
           <div className="scene-wrapper">
-
             <PalletScene
               key={animationKey}
               result={result}
               command={animationCommand}
-              onStateChange={
-                handleAnimationState
-              }
+              onStateChange={handleAnimationState}
             />
-
           </div>
-
         </section>
 
         <section className="visualization-controls">
-
           <div className="animation-info">
-
             <span>
               BOXES PLACED
             </span>
@@ -510,18 +487,14 @@ function App() {
               )}{" "}
               / {totalBoxes}
             </strong>
-
           </div>
 
           <div className="control-buttons">
-
             <button
               type="button"
               className="control-button play-button"
               onClick={handlePlay}
-              disabled={
-                animationState.playing
-              }
+              disabled={animationState.playing}
             >
               Play
             </button>
@@ -530,9 +503,7 @@ function App() {
               type="button"
               className="control-button pause-button"
               onClick={handlePause}
-              disabled={
-                !animationState.playing
-              }
+              disabled={!animationState.playing}
             >
               Pause
             </button>
@@ -544,16 +515,12 @@ function App() {
             >
               Reset
             </button>
-
           </div>
-
         </section>
 
         {result?.statistics && (
           <section className="statistics-section">
-
             <div className="stat-card">
-
               <span>
                 Total Boxes
               </span>
@@ -561,11 +528,9 @@ function App() {
               <strong>
                 {result.statistics.totalBoxes}
               </strong>
-
             </div>
 
             <div className="stat-card">
-
               <span>
                 Full Pallets
               </span>
@@ -573,30 +538,20 @@ function App() {
               <strong>
                 {result.statistics.fullPallets}
               </strong>
-
             </div>
 
             <div className="stat-card">
-
               <span>
                 Last Pallet Utilization
               </span>
 
               <strong>
-                {
-                  result.statistics
-                    .lastPallet
-                    ?.utilization
-                }%
+                {result.statistics.lastPallet?.utilization ?? 0}%
               </strong>
-
             </div>
-
           </section>
         )}
-
       </main>
-
     </div>
   );
 }
