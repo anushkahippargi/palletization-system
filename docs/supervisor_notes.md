@@ -1,3 +1,8 @@
+25.09.2006
+
+ -needs more testing and tuning of algorithms with differet box sizes.
+ -the each layer of Bricks and Wheel algorithms should be rotatetd according to the layer below for stability issue ( if possible )
+
 28.08.2026
  Development of other algorithms for box arrangement:
  -Spiral-block pattern placement -the boxes are the same size and for simplicity the robot can grab only one box. 
