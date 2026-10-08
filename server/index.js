@@ -53,7 +53,9 @@ app.post("/api/palletize", (req, res) => {
     const allowedAlgorithms = [
         "rows",
         "rowscols",
+        "pinwheel",
         "wheel",
+        "hybridpinwheel",
         "wheelinnerfill",
         "bricks"
     ];
@@ -61,7 +63,7 @@ app.post("/api/palletize", (req, res) => {
     if (!allowedAlgorithms.includes(algorithm)) {
         return res.status(400).json({
             error:
-                "Invalid algorithm. Use rows, rowscols, wheel, wheelinnerfill, or bricks."
+                "Invalid algorithm. Use rows, rowscols, pinwheel, hybridpinwheel, or bricks."
         });
     }
 
@@ -100,13 +102,13 @@ app.post("/api/palletize", (req, res) => {
     // ----------------------------------------------------------
     // C++ executable
     // ----------------------------------------------------------
-
-    const executablePath = path.join(
-        __dirname,
-        "..",
-        "build",
-        "palletization"
-    );
+const executablePath = path.join(
+    __dirname,
+    "..",
+    "core",
+    "build",
+    "palletization"
+);
 
     // ----------------------------------------------------------
     // Arguments sent to C++

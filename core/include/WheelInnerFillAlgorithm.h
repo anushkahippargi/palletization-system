@@ -2,66 +2,76 @@
 
 #include "IAlgorithm.h"
 
+#include <vector>
+
+/*
+ * Hybrid Pinwheel
+ * ----------------
+ *
+ * The algorithm builds a real pinwheel-style perimeter first and
+ * then fills the rectangular interior with boxes in the orientation
+ * that gives the best valid fill.
+ *
+ * Every generated placement is checked for:
+ *   - pallet boundary violations
+ *   - same-layer overlap
+ *
+ * Touching edges are allowed.
+ */
 class WheelInnerFillAlgorithm : public IAlgorithm
 {
 private:
-
-    struct Orientation
+    struct Footprint
     {
-        double length;
-        double width;
-        double height;
-        double rotationZ;
-    };
-
-    enum class InnerMode
-    {
-        Grid,
-        Wheel
+        double x = 0.0;
+        double y = 0.0;
+        double length = 0.0;
+        double width = 0.0;
+        double rotationZ = 0.0;
     };
 
     struct Candidate
     {
         bool valid = false;
 
-        // Outer wheel
-        int outerBoxesAlongLength = 0;
-        int outerBoxesAlongWidth = 0;
-        int outerBoxes = 0;
-
-        // Inner arrangement
-        InnerMode innerMode = InnerMode::Grid;
-
-        int innerBoxesAlongLength = 0;
-        int innerBoxesAlongWidth = 0;
+        int boxesPerLayer = 0;
+        int perimeterBoxes = 0;
         int innerBoxes = 0;
 
-        Orientation outerOrientation{};
-        Orientation innerOrientation{};
+        int topBottomBoxes = 0;
+        int sideBoxes = 0;
+        int innerAlongLength = 0;
+        int innerAlongWidth = 0;
 
-        // Total boxes in one layer
-        int boxesPerLayer = 0;
-
-        // Approximate occupied outer rectangle
         double usedLength = 0.0;
         double usedWidth = 0.0;
-
         double unusedArea = 0.0;
+
+        std::vector<Footprint> positions;
     };
 
-    int calculateBoxesAlong(
-        double palletDimension,
-        double boxDimension) const;
-
-    int calculateWheelBoxes(
-        int boxesAlongLength,
-        int boxesAlongWidth) const;
-
-    Candidate evaluateCandidate(
+    Candidate buildCandidate(
         const Pallet& pallet,
-        const Orientation& orientation,
-        int boxesAlongLength,
-        int boxesAlongWidth) const;
+        const Box& box,
+        int topBottomBoxes,
+        int sideBoxes,
+        bool innerRotated) const;
+
+    Candidate findBestCandidate(
+        const Pallet& pallet,
+        const Box& box) const;
+
+    bool fitsOnPallet(
+        const Footprint& footprint,
+        const Pallet& pallet) const;
+
+    bool overlaps(
+        const Footprint& first,
+        const Footprint& second) const;
+
+    bool isValidLayer(
+        const std::vector<Footprint>& positions,
+        const Pallet& pallet) const;
 
     void addPlacement(
         PalletizationResult& result,
@@ -72,41 +82,7 @@ private:
         double z,
         double rotationZ) const;
 
-    void addOuterWheel(
-        PalletizationResult& result,
-        int& boxId,
-        int palletId,
-        double offsetX,
-        double offsetY,
-        double z,
-        const Candidate& candidate,
-        int quantity,
-        bool flipLayer) const;
-
-    void addInnerGrid(
-        PalletizationResult& result,
-        int& boxId,
-        int palletId,
-        double offsetX,
-        double offsetY,
-        double z,
-        const Candidate& candidate,
-        int quantity,
-        bool flipLayer) const;
-
-    void addInnerWheel(
-        PalletizationResult& result,
-        int& boxId,
-        int palletId,
-        double offsetX,
-        double offsetY,
-        double z,
-        const Candidate& candidate,
-        int quantity,
-        bool flipLayer) const;
-
 public:
-
     PalletizationResult generatePattern(
         const Pallet& pallet,
         const Box& box,

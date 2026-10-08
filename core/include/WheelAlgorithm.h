@@ -2,53 +2,94 @@
 
 #include "IAlgorithm.h"
 
+#include <vector>
+
 class WheelAlgorithm : public IAlgorithm
 {
 private:
 
-    struct Orientation
+    /*
+     * One box footprint on a 2D pallet layer.
+     *
+     * x, y = lower-left corner of the box
+     * length, width = actual footprint after rotation
+     */
+    struct Footprint
     {
-        double length;
-        double width;
-        double height;
+        double x = 0.0;
+        double y = 0.0;
 
-        double rotationZ;
+        double length = 0.0;
+        double width = 0.0;
+
+        double rotationZ = 0.0;
     };
 
+
+    /*
+     * Complete valid pinwheel layer.
+     */
     struct Candidate
     {
         bool valid = false;
 
-        // Number of boxes along the pallet length
-        int boxesAlongLength = 0;
-
-        // Number of boxes along the pallet width
-        int boxesAlongWidth = 0;
-
-        // Number of boxes in one complete wheel layer
         int boxesPerLayer = 0;
 
-        // Dimensions occupied by the wheel
+        int unitsAlongLength = 0;
+        int unitsAlongWidth = 0;
+
+        double unitSize = 0.0;
+
         double usedLength = 0.0;
         double usedWidth = 0.0;
 
-        // Unused pallet area
         double unusedArea = 0.0;
 
-        // Box orientation used by this candidate
-        Orientation orientation{};
+        std::vector<Footprint> positions;
     };
 
-    int calculateBoxesAlong(
-        double palletDimension,
-        double boxDimension) const;
 
-    Candidate evaluateCandidate(
+    /*
+     * Build one complete pinwheel layer.
+     */
+    Candidate buildCandidate(
         const Pallet& pallet,
-        const Orientation& orientation,
-        int boxesAlongLength,
-        int boxesAlongWidth) const;
+        const Box& box,
+        bool reversePattern) const;
 
+
+    /*
+     * Check whether one box is completely inside
+     * the pallet boundary.
+     */
+    bool fitsOnPallet(
+        const Footprint& footprint,
+        const Pallet& pallet) const;
+
+
+    /*
+     * Check whether two boxes have positive-area
+     * intersection.
+     *
+     * Touching edges are allowed.
+     */
+    bool overlaps(
+        const Footprint& first,
+        const Footprint& second) const;
+
+
+    /*
+     * Validate the entire generated layer.
+     */
+    bool isValidLayer(
+        const std::vector<Footprint>& positions,
+        const Pallet& pallet) const;
+
+
+    /*
+     * Convert a footprint into the project's
+     * existing Placement representation.
+     */
     void addPlacement(
         PalletizationResult& result,
         int boxId,
@@ -57,6 +98,7 @@ private:
         double y,
         double z,
         double rotationZ) const;
+
 
 public:
 

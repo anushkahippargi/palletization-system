@@ -6,150 +6,465 @@
 
 using namespace std;
 
-static constexpr double EPSILON = 0.000001;
 
-
-// ============================================================
-// Calculate the number of complete boxes that fit along
-// one pallet dimension.
-// ============================================================
-
-int WheelAlgorithm::calculateBoxesAlong(
-    double palletDimension,
-    double boxDimension) const
+namespace
 {
-    if (palletDimension <= 0.0 ||
-        boxDimension <= 0.0)
-    {
-        return 0;
-    }
+    constexpr double EPSILON = 1e-6;
 
-    return static_cast<int>(
-        floor(
-            (palletDimension + EPSILON) /
-            boxDimension
-        )
-    );
+
+    double normalizeAngle(double angle)
+    {
+        while (angle >= 360.0)
+        {
+            angle -= 360.0;
+        }
+
+        while (angle < 0.0)
+        {
+            angle += 360.0;
+        }
+
+        return angle;
+    }
 }
 
 
-// ============================================================
-// Evaluate one Wheel candidate.
-//
-// The supervisor's specification describes two variations:
-//
-//     1. Number of items along pallet L
-//     2. Number of items along pallet W
-//
-// We use these two values to determine the dimensions of
-// the outer Wheel pattern.
-// ============================================================
+/*
+ * ============================================================
+ * PINWHEEL ALGORITHM
+ * ============================================================
+ *
+ * The old Wheel implementation generated a rectangular
+ * perimeter and then placed rotated side boxes using the
+ * ORIGINAL box spacing.
+ *
+ * Example:
+ *
+ *     Box = 300 x 200
+ *
+ * After 90 degree rotation:
+ *
+ *     footprint = 200 x 300
+ *
+ * But the old code advanced Y by only 200 mm.
+ *
+ * Therefore:
+ *
+ *     Box 1 -> Y 200 to 500
+ *     Box 2 -> Y 400 to 700
+ *
+ * They overlap between Y = 400 and Y = 500.
+ *
+ *
+ * This implementation does not use that approach.
+ *
+ * Instead, it creates a real four-box pinwheel unit.
+ *
+ *
+ *                 LONG
+ *          +------------------+----+
+ *          |                  |    |
+ *          |       A          | B  |
+ *          |                  |    |
+ *          +------------------+    |
+ *          | D |              |    |
+ *          |   |  CENTRAL     |    |
+ *          |   |    GAP       | C  |
+ *          |   |              |    |
+ *          +---+--------------+----+
+ *              <---- LONG ---->
+ *
+ *
+ * Unit dimensions:
+ *
+ *     (Long + Short) x (Long + Short)
+ *
+ *
+ * Four boxes:
+ *
+ *     A = horizontal
+ *     B = vertical
+ *     C = horizontal
+ *     D = vertical
+ *
+ *
+ * Every placement is then geometrically validated.
+ *
+ * No overlap is allowed.
+ * ============================================================
+ */
+
 
 WheelAlgorithm::Candidate
-WheelAlgorithm::evaluateCandidate(
+WheelAlgorithm::buildCandidate(
     const Pallet& pallet,
-    const Orientation& orientation,
-    int boxesAlongLength,
-    int boxesAlongWidth) const
+    const Box& box,
+    bool reversePattern) const
 {
     Candidate candidate;
 
-    candidate.boxesAlongLength =
-        boxesAlongLength;
 
-    candidate.boxesAlongWidth =
-        boxesAlongWidth;
+    const double boxLength =
+        box.getLength();
+
+    const double boxWidth =
+        box.getWidth();
 
 
-    if (boxesAlongLength < 2 ||
-        boxesAlongWidth < 2)
+    if (boxLength <= 0.0 ||
+        boxWidth <= 0.0 ||
+        pallet.getLength() <= 0.0 ||
+        pallet.getWidth() <= 0.0)
     {
         return candidate;
     }
 
 
-    // --------------------------------------------------------
-    // The complete wheel occupies the selected rectangular
-    // footprint.
-    // --------------------------------------------------------
+    /*
+     * Work using long and short dimensions.
+     *
+     * This makes the geometry independent of whether
+     * the user entered the larger dimension as length
+     * or width.
+     */
+    const double longSide =
+        max(boxLength, boxWidth);
+
+    const double shortSide =
+        min(boxLength, boxWidth);
+
+
+    /*
+     * A four-box pinwheel unit has this size:
+     *
+     *             Long + Short
+     *       <----------------------->
+     *
+     *       +-----------------------+
+     *       |                       |
+     *       |       PINWHEEL        |
+     *       |                       |
+     *       +-----------------------+
+     */
+    const double unitSize =
+        longSide + shortSide;
+
+
+    if (unitSize <= EPSILON)
+    {
+        return candidate;
+    }
+
+
+    /*
+     * Find how many complete pinwheel units
+     * fit along the pallet.
+     */
+    const int unitsX =
+        static_cast<int>(
+            floor(
+                (pallet.getLength() + EPSILON) /
+                unitSize
+            )
+        );
+
+
+    const int unitsY =
+        static_cast<int>(
+            floor(
+                (pallet.getWidth() + EPSILON) /
+                unitSize
+            )
+        );
+
+
+    if (unitsX <= 0 ||
+        unitsY <= 0)
+    {
+        return candidate;
+    }
+
+
+    candidate.unitsAlongLength =
+        unitsX;
+
+    candidate.unitsAlongWidth =
+        unitsY;
+
+    candidate.unitSize =
+        unitSize;
+
 
     candidate.usedLength =
-        boxesAlongLength *
-        orientation.length;
+        unitsX *
+        unitSize;
 
     candidate.usedWidth =
-        boxesAlongWidth *
-        orientation.width;
+        unitsY *
+        unitSize;
 
 
-    // --------------------------------------------------------
-    // Check that the complete footprint fits on the pallet.
-    // --------------------------------------------------------
+    /*
+     * Center the complete pinwheel pattern
+     * on the pallet.
+     */
+    const double offsetX =
+        (pallet.getLength() -
+         candidate.usedLength) /
+        2.0;
 
-    if (candidate.usedLength >
-            pallet.getLength() + EPSILON ||
-        candidate.usedWidth >
-            pallet.getWidth() + EPSILON)
+
+    const double offsetY =
+        (pallet.getWidth() -
+         candidate.usedWidth) /
+        2.0;
+
+
+    /*
+     * Determine which Z rotation represents
+     * the long side pointing along X.
+     */
+    const double horizontalRotation =
+        boxLength >= boxWidth
+            ? 0.0
+            : 90.0;
+
+
+    const double verticalRotation =
+        horizontalRotation +
+        90.0;
+
+
+    /*
+     * ========================================================
+     * BUILD PINWHEEL UNITS
+     * ========================================================
+     *
+     * Each unit contains exactly four boxes.
+     *
+     * A:
+     *
+     *     x = 0
+     *     y = 0
+     *     size = Long x Short
+     *
+     * B:
+     *
+     *     x = Long
+     *     y = 0
+     *     size = Short x Long
+     *
+     * C:
+     *
+     *     x = Short
+     *     y = Long
+     *     size = Long x Short
+     *
+     * D:
+     *
+     *     x = 0
+     *     y = Short
+     *     size = Short x Long
+     *
+     *
+     * The center gap is intentional.
+     *
+     * We NEVER try to squeeze a box into it.
+     * ========================================================
+     */
+
+    for (int unitY = 0;
+         unitY < unitsY;
+         ++unitY)
     {
-        return candidate;
+        for (int unitX = 0;
+             unitX < unitsX;
+             ++unitX)
+        {
+            const double originX =
+                offsetX +
+                unitX * unitSize;
+
+
+            const double originY =
+                offsetY +
+                unitY * unitSize;
+
+
+            vector<Footprint> unit;
+
+
+            /*
+             * ------------------------------------------------
+             * BOX A
+             * ------------------------------------------------
+             */
+            unit.push_back(
+            {
+                originX,
+                originY,
+
+                longSide,
+                shortSide,
+
+                horizontalRotation
+            });
+
+
+            /*
+             * ------------------------------------------------
+             * BOX B
+             * ------------------------------------------------
+             */
+            unit.push_back(
+            {
+                originX + longSide,
+                originY,
+
+                shortSide,
+                longSide,
+
+                verticalRotation
+            });
+
+
+            /*
+             * ------------------------------------------------
+             * BOX C
+             * ------------------------------------------------
+             */
+            unit.push_back(
+            {
+                originX + shortSide,
+                originY + longSide,
+
+                longSide,
+                shortSide,
+
+                horizontalRotation
+            });
+
+
+            /*
+             * ------------------------------------------------
+             * BOX D
+             * ------------------------------------------------
+             */
+            unit.push_back(
+            {
+                originX,
+                originY + shortSide,
+
+                shortSide,
+                longSide,
+
+                verticalRotation
+            });
+
+
+            /*
+             * Optional 180 degree variation for alternating
+             * units.
+             *
+             * This does NOT change the footprint dimensions.
+             * It only changes the handedness/orientation.
+             */
+            if (reversePattern &&
+                ((unitX + unitY) % 2 == 1))
+            {
+                for (Footprint& footprint : unit)
+                {
+                    const double localX =
+                        footprint.x -
+                        originX;
+
+
+                    const double localY =
+                        footprint.y -
+                        originY;
+
+
+                    const double oldLength =
+                        footprint.length;
+
+
+                    const double oldWidth =
+                        footprint.width;
+
+
+                    footprint.x =
+                        originX +
+                        unitSize -
+                        localX -
+                        oldLength;
+
+
+                    footprint.y =
+                        originY +
+                        unitSize -
+                        localY -
+                        oldWidth;
+
+
+                    footprint.rotationZ =
+                        normalizeAngle(
+                            footprint.rotationZ +
+                            180.0
+                        );
+                }
+            }
+
+
+            /*
+             * Add the four boxes to the complete layer.
+             */
+            for (const Footprint& footprint : unit)
+            {
+                candidate.positions.push_back(
+                    footprint
+                );
+            }
+        }
     }
 
 
-    // --------------------------------------------------------
-    // Number of boxes in the outer wheel.
-    //
-    // A rectangular wheel is a perimeter:
-    //
-    //     top    = boxesAlongLength
-    //     bottom = boxesAlongLength
-    //     left   = boxesAlongWidth - 2
-    //     right  = boxesAlongWidth - 2
-    //
-    // The corner boxes belong to the top/bottom sides and
-    // therefore are not counted twice.
-    // --------------------------------------------------------
+    /*
+     * ========================================================
+     * HARD GEOMETRIC VALIDATION
+     * ========================================================
+     *
+     * Even though the pattern is mathematically generated,
+     * we still validate EVERYTHING.
+     *
+     * This is the safety net that the old Wheel algorithm
+     * did not have.
+     */
+    if (!isValidLayer(
+            candidate.positions,
+            pallet))
+    {
+        candidate.positions.clear();
 
-    int top =
-        boxesAlongLength;
-
-    int bottom =
-        boxesAlongLength;
-
-    int left =
-        boxesAlongWidth - 2;
-
-    int right =
-        boxesAlongWidth - 2;
+        return candidate;
+    }
 
 
     candidate.boxesPerLayer =
-        top +
-        bottom +
-        left +
-        right;
+        static_cast<int>(
+            candidate.positions.size()
+        );
 
 
-    if (candidate.boxesPerLayer <= 0)
-    {
-        return candidate;
-    }
-
-
-    // --------------------------------------------------------
-    // Calculate unused pallet area.
-    // --------------------------------------------------------
-
-    double palletArea =
-        pallet.getLength() *
-        pallet.getWidth();
-
-    double usedArea =
-        candidate.usedLength *
-        candidate.usedWidth;
-
+    /*
+     * Calculate unused pallet area.
+     */
     candidate.unusedArea =
-        palletArea -
-        usedArea;
+        pallet.getLength() *
+        pallet.getWidth()
+        -
+        candidate.boxesPerLayer *
+        longSide *
+        shortSide;
 
 
     if (candidate.unusedArea < 0.0 &&
@@ -159,18 +474,187 @@ WheelAlgorithm::evaluateCandidate(
     }
 
 
-    candidate.orientation =
-        orientation;
+    candidate.valid =
+        candidate.boxesPerLayer > 0;
 
-    candidate.valid = true;
 
     return candidate;
 }
 
 
-// ============================================================
-// Add one placement to the result.
-// ============================================================
+/*
+ * ============================================================
+ * PALLET BOUNDARY CHECK
+ * ============================================================
+ */
+
+bool WheelAlgorithm::fitsOnPallet(
+    const Footprint& footprint,
+    const Pallet& pallet) const
+{
+    if (footprint.x < -EPSILON)
+    {
+        return false;
+    }
+
+
+    if (footprint.y < -EPSILON)
+    {
+        return false;
+    }
+
+
+    if (footprint.x +
+        footprint.length >
+        pallet.getLength() +
+        EPSILON)
+    {
+        return false;
+    }
+
+
+    if (footprint.y +
+        footprint.width >
+        pallet.getWidth() +
+        EPSILON)
+    {
+        return false;
+    }
+
+
+    return true;
+}
+
+
+/*
+ * ============================================================
+ * BOX-BOX OVERLAP CHECK
+ * ============================================================
+ *
+ * Positive-area intersection = overlap.
+ *
+ * Touching edges are allowed.
+ *
+ * Example:
+ *
+ *     Box A | Box B
+ *
+ * They share an edge but do not overlap.
+ *
+ * That is valid.
+ * ============================================================
+ */
+
+bool WheelAlgorithm::overlaps(
+    const Footprint& first,
+    const Footprint& second) const
+{
+    const double firstRight =
+        first.x +
+        first.length;
+
+
+    const double firstTop =
+        first.y +
+        first.width;
+
+
+    const double secondRight =
+        second.x +
+        second.length;
+
+
+    const double secondTop =
+        second.y +
+        second.width;
+
+
+    const double overlapX =
+        min(
+            firstRight,
+            secondRight
+        )
+        -
+        max(
+            first.x,
+            second.x
+        );
+
+
+    const double overlapY =
+        min(
+            firstTop,
+            secondTop
+        )
+        -
+        max(
+            first.y,
+            second.y
+        );
+
+
+    return
+        overlapX > EPSILON &&
+        overlapY > EPSILON;
+}
+
+
+/*
+ * ============================================================
+ * COMPLETE LAYER VALIDATION
+ * ============================================================
+ */
+
+bool WheelAlgorithm::isValidLayer(
+    const vector<Footprint>& positions,
+    const Pallet& pallet) const
+{
+    /*
+     * First check every box against the pallet.
+     */
+    for (const Footprint& footprint :
+         positions)
+    {
+        if (!fitsOnPallet(
+                footprint,
+                pallet))
+        {
+            return false;
+        }
+    }
+
+
+    /*
+     * Then check every box against every
+     * other box.
+     */
+    for (size_t i = 0;
+         i < positions.size();
+         ++i)
+    {
+        for (size_t j = i + 1;
+             j < positions.size();
+             ++j)
+        {
+            if (overlaps(
+                    positions[i],
+                    positions[j]))
+            {
+                return false;
+            }
+        }
+    }
+
+
+    return !positions.empty();
+}
+
+
+/*
+ * ============================================================
+ * CREATE PLACEMENT
+ * ============================================================
+ */
 
 void WheelAlgorithm::addPlacement(
     PalletizationResult& result,
@@ -183,11 +667,13 @@ void WheelAlgorithm::addPlacement(
 {
     Matrix4x4 pose;
 
+
     pose.setTranslation(
         x,
         y,
         z
     );
+
 
     pose.setRotationZ(
         rotationZ
@@ -208,11 +694,14 @@ void WheelAlgorithm::addPlacement(
 }
 
 
-// ============================================================
-// MAIN WHEEL ALGORITHM
-// ============================================================
+/*
+ * ============================================================
+ * MAIN ALGORITHM
+ * ============================================================
+ */
 
-PalletizationResult WheelAlgorithm::generatePattern(
+PalletizationResult
+WheelAlgorithm::generatePattern(
     const Pallet& pallet,
     const Box& box,
     int quantity)
@@ -220,276 +709,114 @@ PalletizationResult WheelAlgorithm::generatePattern(
     PalletizationResult result;
 
 
-    // ========================================================
-    // VALIDATION
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * BASIC VALIDATION
+     * --------------------------------------------------------
+     */
 
-    if (quantity <= 0)
-    {
-        result.getStatistics()
-            .setTotalBoxes(0);
-
-        result.getStatistics()
-            .setFullPallets(0);
-
-        return result;
-    }
-
-
-    const double palletLength =
-        pallet.getLength();
-
-    const double palletWidth =
-        pallet.getWidth();
-
-    const double palletHeight =
-        pallet.getHeight();
-
-
-    const double boxLength =
-        box.getLength();
-
-    const double boxWidth =
-        box.getWidth();
-
-    const double boxHeight =
-        box.getHeight();
-
-
-    if (palletLength <= 0.0 ||
-        palletWidth <= 0.0 ||
-        palletHeight <= 0.0 ||
-        boxLength <= 0.0 ||
-        boxWidth <= 0.0 ||
-        boxHeight <= 0.0)
+    if (quantity <= 0 ||
+        box.getLength() <= 0.0 ||
+        box.getWidth() <= 0.0 ||
+        box.getHeight() <= 0.0 ||
+        pallet.getLength() <= 0.0 ||
+        pallet.getWidth() <= 0.0 ||
+        pallet.getHeight() <= 0.0)
     {
         return result;
     }
 
 
-    // ========================================================
-    // TWO FLOOR ORIENTATIONS
-    //
-    // Normal:
-    //
-    //      L x W x H
-    //
-    // Rotated:
-    //
-    //      W x L x H
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * BUILD TWO PINWHEEL VARIANTS
+     * --------------------------------------------------------
+     */
 
-    Orientation normalOrientation
-    {
-        boxLength,
-        boxWidth,
-        boxHeight,
-        0.0
-    };
+    Candidate candidates[2];
 
 
-    Orientation rotatedOrientation
-    {
-        boxWidth,
-        boxLength,
-        boxHeight,
-        90.0
-    };
+    candidates[0] =
+        buildCandidate(
+            pallet,
+            box,
+            false
+        );
 
 
-    // ========================================================
-    // FIND BEST WHEEL CANDIDATE
-    // ========================================================
+    candidates[1] =
+        buildCandidate(
+            pallet,
+            box,
+            true
+        );
+
 
     Candidate bestCandidate;
 
-    bool hasCandidate = false;
+    bool foundCandidate =
+        false;
 
 
-    auto isBetterCandidate =
-        [](const Candidate& candidate,
-           const Candidate& best) -> bool
+    /*
+     * Select the valid candidate with the
+     * greatest number of boxes per layer.
+     */
+    for (const Candidate& candidate :
+         candidates)
     {
-        // ----------------------------------------------------
-        // Rule 1:
-        // More boxes in the Wheel is better.
-        // ----------------------------------------------------
-
-        if (candidate.boxesPerLayer !=
-            best.boxesPerLayer)
+        if (!candidate.valid)
         {
-            return candidate.boxesPerLayer >
-                   best.boxesPerLayer;
+            continue;
         }
 
 
-        // ----------------------------------------------------
-        // Rule 2:
-        // If equal, prefer the pattern with less unused area.
-        // ----------------------------------------------------
-
-        if (fabs(
-                candidate.unusedArea -
-                best.unusedArea
-            ) > EPSILON)
+        if (!foundCandidate ||
+            candidate.boxesPerLayer >
+                bestCandidate.boxesPerLayer ||
+            (
+                candidate.boxesPerLayer ==
+                    bestCandidate.boxesPerLayer &&
+                candidate.unusedArea <
+                    bestCandidate.unusedArea -
+                    EPSILON
+            ))
         {
-            return candidate.unusedArea <
-                   best.unusedArea;
-        }
+            bestCandidate =
+                candidate;
 
-
-        return false;
-    };
-
-
-    // ========================================================
-    // EVALUATE BOTH FLOOR ORIENTATIONS
-    // ========================================================
-
-    Orientation orientations[2] =
-    {
-        normalOrientation,
-        rotatedOrientation
-    };
-
-
-    for (const Orientation& orientation :
-         orientations)
-    {
-        int maximumLength =
-            calculateBoxesAlong(
-                palletLength,
-                orientation.length
-            );
-
-
-        int maximumWidth =
-            calculateBoxesAlong(
-                palletWidth,
-                orientation.width
-            );
-
-
-        // ----------------------------------------------------
-        // Wheel variation 1:
-        // number of boxes along pallet L
-        // ----------------------------------------------------
-
-        for (int boxesAlongLength = 2;
-             boxesAlongLength <= maximumLength;
-             ++boxesAlongLength)
-        {
-            // ------------------------------------------------
-            // Wheel variation 2:
-            // number of boxes along pallet W
-            // ------------------------------------------------
-
-            for (int boxesAlongWidth = 2;
-                 boxesAlongWidth <= maximumWidth;
-                 ++boxesAlongWidth)
-            {
-                Candidate candidate =
-                    evaluateCandidate(
-                        pallet,
-                        orientation,
-                        boxesAlongLength,
-                        boxesAlongWidth
-                    );
-
-
-                if (!candidate.valid)
-                {
-                    continue;
-                }
-
-
-                if (!hasCandidate ||
-                    isBetterCandidate(
-                        candidate,
-                        bestCandidate
-                    ))
-                {
-                    bestCandidate =
-                        candidate;
-
-                    hasCandidate = true;
-                }
-            }
+            foundCandidate =
+                true;
         }
     }
 
 
-    // ========================================================
-    // NO VALID WHEEL
-    // ========================================================
-
-    if (!hasCandidate)
+    /*
+     * No valid pinwheel can fit.
+     */
+    if (!foundCandidate)
     {
+        cout
+            << "PINWHEEL: No valid pinwheel layer "
+            << "fits on the pallet."
+            << endl;
+
         return result;
     }
 
 
-    // ========================================================
-    // DISPLAY SELECTED WHEEL
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * NUMBER OF VERTICAL LAYERS
+     * --------------------------------------------------------
+     */
 
-    cout << "\n========================================"
-         << endl;
-
-    cout << "WHEEL ALGORITHM"
-         << endl;
-
-    cout << "========================================"
-         << endl;
-
-
-    cout << "Selected orientation: "
-         << bestCandidate.orientation.length
-         << " x "
-         << bestCandidate.orientation.width
-         << " x "
-         << bestCandidate.orientation.height
-         << endl;
-
-
-    cout << "Boxes along pallet L: "
-         << bestCandidate.boxesAlongLength
-         << endl;
-
-
-    cout << "Boxes along pallet W: "
-         << bestCandidate.boxesAlongWidth
-         << endl;
-
-
-    cout << "Boxes in wheel layer: "
-         << bestCandidate.boxesPerLayer
-         << endl;
-
-
-    cout << "Used length: "
-         << bestCandidate.usedLength
-         << endl;
-
-
-    cout << "Used width: "
-         << bestCandidate.usedWidth
-         << endl;
-
-
-    cout << "Unused area: "
-         << bestCandidate.unusedArea
-         << endl;
-
-
-    // ========================================================
-    // VERTICAL LAYERS
-    // ========================================================
-
-    int layers =
-        calculateBoxesAlong(
-            palletHeight,
-            boxHeight
+    const int layers =
+        static_cast<int>(
+            floor(
+                (pallet.getHeight() + EPSILON) /
+                box.getHeight()
+            )
         );
 
 
@@ -499,40 +826,101 @@ PalletizationResult WheelAlgorithm::generatePattern(
     }
 
 
-    int boxesPerPallet =
+    /*
+     * Total capacity of one pallet.
+     */
+    const int boxesPerPallet =
         bestCandidate.boxesPerLayer *
         layers;
 
 
-    cout << "Layers: "
-         << layers
-         << endl;
-
-
-    cout << "Boxes per pallet: "
-         << boxesPerPallet
-         << endl;
-
-
-    // ========================================================
-    // VOLUMES
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * VOLUME INFORMATION
+     * --------------------------------------------------------
+     */
 
     const double boxVolume =
-        boxLength *
-        boxWidth *
-        boxHeight;
+        box.getLength() *
+        box.getWidth() *
+        box.getHeight();
 
 
     const double palletVolume =
-        palletLength *
-        palletWidth *
-        palletHeight;
+        pallet.getLength() *
+        pallet.getWidth() *
+        pallet.getHeight();
 
 
-    // ========================================================
-    // PALLETIZATION
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * DEBUG INFORMATION
+     * --------------------------------------------------------
+     */
+
+    cout
+        << "\n========================================"
+        << endl;
+
+
+    cout
+        << "PINWHEEL ALGORITHM"
+        << endl;
+
+
+    cout
+        << "========================================"
+        << endl;
+
+
+    cout
+        << "Boxes per pinwheel layer: "
+        << bestCandidate.boxesPerLayer
+        << endl;
+
+
+    cout
+        << "Pinwheel units along L: "
+        << bestCandidate.unitsAlongLength
+        << endl;
+
+
+    cout
+        << "Pinwheel units along W: "
+        << bestCandidate.unitsAlongWidth
+        << endl;
+
+
+    cout
+        << "Pinwheel unit size: "
+        << bestCandidate.unitSize
+        << " x "
+        << bestCandidate.unitSize
+        << endl;
+
+
+    cout
+        << "Layers per pallet: "
+        << layers
+        << endl;
+
+
+    cout
+        << "Boxes per pallet: "
+        << boxesPerPallet
+        << endl;
+
+
+    cout
+        << "========================================"
+        << endl;
+
+
+    /*
+     * --------------------------------------------------------
+     * PLACE BOXES
+     * --------------------------------------------------------
+     */
 
     int boxesPlaced = 0;
 
@@ -543,13 +931,13 @@ PalletizationResult WheelAlgorithm::generatePattern(
 
     while (boxesPlaced < quantity)
     {
-        int boxesOnCurrentPallet = 0;
+        const int boxesBeforePallet =
+            boxesPlaced;
 
 
-        // ====================================================
-        // EACH LAYER
-        // ====================================================
-
+        /*
+         * Generate every layer.
+         */
         for (int layer = 0;
              layer < layers &&
              boxesPlaced < quantity;
@@ -557,109 +945,64 @@ PalletizationResult WheelAlgorithm::generatePattern(
         {
             const double z =
                 layer *
-                boxHeight;
+                box.getHeight();
 
 
-            // ------------------------------------------------
-            // Alternate layers.
-            //
-            // Layer 0 = normal wheel
-            // Layer 1 = flipped wheel
-            // Layer 2 = normal wheel
-            // Layer 3 = flipped wheel
-            //
-            // This creates the required brick-effect.
-            // ------------------------------------------------
-
-            bool flipped =
+            /*
+             * Alternate layers by rotating the
+             * complete pinwheel 180 degrees.
+             *
+             * This gives the stack an interlocking
+             * layer-to-layer effect.
+             */
+            const bool flippedLayer =
                 (layer % 2 == 1);
 
 
-            // ------------------------------------------------
-            // Center the complete wheel on the pallet.
-            // ------------------------------------------------
-
-            double offsetX =
-                (palletLength -
-                 bestCandidate.usedLength) /
-                2.0;
-
-
-            double offsetY =
-                (palletWidth -
-                 bestCandidate.usedWidth) /
-                2.0;
-
-
-            if (offsetX < 0.0 &&
-                offsetX > -EPSILON)
+            for (const Footprint& footprint :
+                 bestCandidate.positions)
             {
-                offsetX = 0.0;
-            }
+                if (boxesPlaced >= quantity)
+                {
+                    break;
+                }
 
 
-            if (offsetY < 0.0 &&
-                offsetY > -EPSILON)
-            {
-                offsetY = 0.0;
-            }
-
-
-            const double L =
-                bestCandidate.orientation.length;
-
-
-            const double W =
-                bestCandidate.orientation.width;
-
-
-            const int nL =
-                bestCandidate.boxesAlongLength;
-
-
-            const int nW =
-                bestCandidate.boxesAlongWidth;
-
-
-            // =================================================
-            // WHEEL
-            //
-            // Top side
-            // =================================================
-
-            for (int i = 0;
-                 i < nL &&
-                 boxesPlaced < quantity;
-                 ++i)
-            {
                 double x =
-                    offsetX +
-                    i * L;
+                    footprint.x;
 
 
                 double y =
-                    offsetY;
+                    footprint.y;
 
 
                 double rotation =
-                    bestCandidate.orientation.rotationZ;
+                    footprint.rotationZ;
 
 
-                // Flip the whole layer around the pallet
-                // center.
-                if (flipped)
+                /*
+                 * Flip the complete layer around
+                 * the pallet centre.
+                 */
+                if (flippedLayer)
                 {
                     x =
-                        palletLength -
-                        x -
-                        L;
+                        pallet.getLength() -
+                        footprint.x -
+                        footprint.length;
+
 
                     y =
-                        palletWidth -
-                        y -
-                        W;
+                        pallet.getWidth() -
+                        footprint.y -
+                        footprint.width;
 
-                    rotation += 180.0;
+
+                    rotation =
+                        normalizeAngle(
+                            rotation +
+                            180.0
+                        );
                 }
 
 
@@ -675,189 +1018,20 @@ PalletizationResult WheelAlgorithm::generatePattern(
 
 
                 ++boxesPlaced;
-                ++boxesOnCurrentPallet;
-            }
-
-
-            // =================================================
-            // BOTTOM SIDE
-            //
-            // We don't add this if the top side has already
-            // filled the requested quantity.
-            // =================================================
-
-            for (int i = 0;
-                 i < nL &&
-                 boxesPlaced < quantity;
-                 ++i)
-            {
-                double x =
-                    offsetX +
-                    i * L;
-
-
-                double y =
-                    offsetY +
-                    (nW - 1) * W;
-
-
-                double rotation =
-                    bestCandidate.orientation.rotationZ;
-
-
-                if (flipped)
-                {
-                    x =
-                        palletLength -
-                        x -
-                        L;
-
-                    y =
-                        palletWidth -
-                        y -
-                        W;
-
-                    rotation += 180.0;
-                }
-
-
-                addPlacement(
-                    result,
-                    boxesPlaced + 1,
-                    palletId,
-                    x,
-                    y,
-                    z,
-                    rotation
-                );
-
-
-                ++boxesPlaced;
-                ++boxesOnCurrentPallet;
-            }
-
-
-            // =================================================
-            // LEFT SIDE
-            //
-            // Start from row 1 and stop before the bottom
-            // corner, because the corners were already placed.
-            // =================================================
-
-            for (int j = 1;
-                 j < nW - 1 &&
-                 boxesPlaced < quantity;
-                 ++j)
-            {
-                double x =
-                    offsetX;
-
-
-                double y =
-                    offsetY +
-                    j * W;
-
-
-                // Side boxes need the rotated orientation.
-                double rotation =
-                    bestCandidate.orientation.rotationZ +
-                    90.0;
-
-
-                if (flipped)
-                {
-                    x =
-                        palletLength -
-                        x -
-                        W;
-
-                    y =
-                        palletWidth -
-                        y -
-                        L;
-
-                    rotation += 180.0;
-                }
-
-
-                addPlacement(
-                    result,
-                    boxesPlaced + 1,
-                    palletId,
-                    x,
-                    y,
-                    z,
-                    rotation
-                );
-
-
-                ++boxesPlaced;
-                ++boxesOnCurrentPallet;
-            }
-
-
-            // =================================================
-            // RIGHT SIDE
-            //
-            // Again, corners are excluded.
-            // =================================================
-
-            for (int j = 1;
-                 j < nW - 1 &&
-                 boxesPlaced < quantity;
-                 ++j)
-            {
-                double x =
-                    offsetX +
-                    (nL - 1) * L;
-
-
-                double y =
-                    offsetY +
-                    j * W;
-
-
-                double rotation =
-                    bestCandidate.orientation.rotationZ +
-                    90.0;
-
-
-                if (flipped)
-                {
-                    x =
-                        palletLength -
-                        x -
-                        W;
-
-                    y =
-                        palletWidth -
-                        y -
-                        L;
-
-                    rotation += 180.0;
-                }
-
-
-                addPlacement(
-                    result,
-                    boxesPlaced + 1,
-                    palletId,
-                    x,
-                    y,
-                    z,
-                    rotation
-                );
-
-
-                ++boxesPlaced;
-                ++boxesOnCurrentPallet;
             }
         }
 
 
-        // ====================================================
-        // STATISTICS
-        // ====================================================
+        /*
+         * ----------------------------------------------------
+         * PALLET STATISTICS
+         * ----------------------------------------------------
+         */
+
+        const int boxesOnCurrentPallet =
+            boxesPlaced -
+            boxesBeforePallet;
+
 
         if (boxesOnCurrentPallet ==
             boxesPerPallet)
@@ -881,10 +1055,10 @@ PalletizationResult WheelAlgorithm::generatePattern(
         }
 
 
-        // ----------------------------------------------------
-        // Safety check.
-        // ----------------------------------------------------
-
+        /*
+         * Prevent an infinite loop if something
+         * unexpected happens.
+         */
         if (boxesOnCurrentPallet == 0)
         {
             break;
@@ -895,9 +1069,11 @@ PalletizationResult WheelAlgorithm::generatePattern(
     }
 
 
-    // ========================================================
-    // FINAL STATISTICS
-    // ========================================================
+    /*
+     * --------------------------------------------------------
+     * FINAL STATISTICS
+     * --------------------------------------------------------
+     */
 
     result.getStatistics()
         .setTotalBoxes(
@@ -911,29 +1087,22 @@ PalletizationResult WheelAlgorithm::generatePattern(
         );
 
 
-    cout << "\n----------------------------------------"
-         << endl;
+    cout
+        << "Boxes requested: "
+        << quantity
+        << endl;
 
-    cout << "WHEEL RESULT"
-         << endl;
 
-    cout << "----------------------------------------"
-         << endl;
+    cout
+        << "Boxes placed: "
+        << boxesPlaced
+        << endl;
 
-    cout << "Boxes requested: "
-         << quantity
-         << endl;
 
-    cout << "Boxes placed: "
-         << boxesPlaced
-         << endl;
-
-    cout << "Full pallets: "
-         << fullPallets
-         << endl;
-
-    cout << "----------------------------------------"
-         << endl;
+    cout
+        << "Full pallets: "
+        << fullPallets
+        << endl;
 
 
     return result;

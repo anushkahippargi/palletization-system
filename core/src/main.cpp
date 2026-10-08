@@ -494,7 +494,7 @@ else if (algorithmName == "rowscols")
         quantity
     );
 }
-else if (algorithmName == "wheel")
+else if (algorithmName == "pinwheel" || algorithmName == "wheel")
 {
     WheelAlgorithm algorithm;
 
@@ -504,7 +504,7 @@ else if (algorithmName == "wheel")
         quantity
     );
 }
-else if (algorithmName == "wheelinnerfill")
+else if (algorithmName == "hybridpinwheel" || algorithmName == "wheelinnerfill")
 {
     WheelInnerFillAlgorithm algorithm;
 

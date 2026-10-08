@@ -2,366 +2,406 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
+
+using namespace std;
 
 namespace
 {
-    constexpr double EPSILON = 1e-9;
-}
+    constexpr double EPSILON = 1e-6;
 
-int WheelInnerFillAlgorithm::calculateBoxesAlong(
-    double palletDimension,
-    double boxDimension) const
-{
-    if (boxDimension <= EPSILON)
+    double normalizedAngle(double angle)
     {
-        return 0;
+        while (angle >= 360.0)
+            angle -= 360.0;
+
+        while (angle < 0.0)
+            angle += 360.0;
+
+        return angle;
     }
-
-    return static_cast<int>(
-        std::floor(
-            (palletDimension + EPSILON) /
-            boxDimension
-        )
-    );
-}
-
-int WheelInnerFillAlgorithm::calculateWheelBoxes(
-    int boxesAlongLength,
-    int boxesAlongWidth) const
-{
-    if (boxesAlongLength < 2 ||
-        boxesAlongWidth < 2)
-    {
-        return 0;
-    }
-
-    /*
-     * Number of boxes on the perimeter:
-     *
-     * top    = boxesAlongLength
-     * bottom = boxesAlongLength
-     * left   = boxesAlongWidth - 2
-     * right  = boxesAlongWidth - 2
-     */
-    return
-        (2 * boxesAlongLength) +
-        (2 * (boxesAlongWidth - 2));
 }
 
 WheelInnerFillAlgorithm::Candidate
-WheelInnerFillAlgorithm::evaluateCandidate(
+WheelInnerFillAlgorithm::buildCandidate(
     const Pallet& pallet,
-    const Orientation& orientation,
-    int boxesAlongLength,
-    int boxesAlongWidth) const
+    const Box& box,
+    int topBottomBoxes,
+    int sideBoxes,
+    bool innerRotated) const
 {
     Candidate candidate;
 
-    if (boxesAlongLength < 2 ||
-        boxesAlongWidth < 2)
-    {
+    if (topBottomBoxes < 2 || sideBoxes < 1)
         return candidate;
-    }
 
+    const double boxLength = box.getLength();
+    const double boxWidth = box.getWidth();
+
+    if (boxLength <= EPSILON || boxWidth <= EPSILON)
+        return candidate;
+
+    const double longSide = max(boxLength, boxWidth);
+    const double shortSide = min(boxLength, boxWidth);
+
+    /*
+     * We use the long side horizontally for the top/bottom
+     * perimeter and the short side as the frame thickness.
+     *
+     * This gives the characteristic four-direction pinwheel
+     * perimeter:
+     *
+     *   TOP       ->  long x short
+     *   LEFT/RIGHT->  short x long
+     *   BOTTOM    ->  long x short
+     *
+     * The side boxes begin after the top row and end before
+     * the bottom row, so they cannot overlap the corners.
+     */
     const double outerLength =
-        boxesAlongLength *
-        orientation.length;
+        topBottomBoxes * longSide;
 
     const double outerWidth =
-        boxesAlongWidth *
-        orientation.width;
+        2.0 * shortSide +
+        sideBoxes * longSide;
 
-    /*
-     * The complete outer wheel must fit on the pallet.
-     */
-    if (outerLength >
-            pallet.getLength() + EPSILON ||
-        outerWidth >
-            pallet.getWidth() + EPSILON)
+    if (outerLength > pallet.getLength() + EPSILON ||
+        outerWidth > pallet.getWidth() + EPSILON)
     {
         return candidate;
     }
 
-    const int outerBoxes =
-        calculateWheelBoxes(
-            boxesAlongLength,
-            boxesAlongWidth
-        );
-
-    if (outerBoxes <= 0)
-    {
-        return candidate;
-    }
-
-    candidate.valid = true;
-
-    candidate.outerBoxesAlongLength =
-        boxesAlongLength;
-
-    candidate.outerBoxesAlongWidth =
-        boxesAlongWidth;
-
-    candidate.outerBoxes =
-        outerBoxes;
-
-    candidate.outerOrientation =
-        orientation;
-
-    candidate.usedLength =
-        outerLength;
-
-    candidate.usedWidth =
-        outerWidth;
-
-    /*
-     * ============================================================
-     * ACTUAL INTERIOR AREA
-     * ============================================================
-     *
-     * The side boxes are rotated by 90 degrees.
-     *
-     * Therefore the safe interior starts after the width of the
-     * side boxes and ends before the opposite side.
-     *
-     * This is calculated for EVERY possible outer wheel.
-     */
-    const double innerStartX =
-        orientation.width;
-
-    const double innerStartY =
-        orientation.width;
-
-    const double innerEndX =
-        (boxesAlongLength - 1) *
-        orientation.length;
-
-    const double innerEndY =
-        (boxesAlongWidth - 1) *
-        orientation.width;
+    const double innerStartX = shortSide;
+    const double innerStartY = shortSide;
 
     const double innerLength =
-        innerEndX -
-        innerStartX;
+        outerLength - 2.0 * shortSide;
 
     const double innerWidth =
-        innerEndY -
-        innerStartY;
+        outerWidth - 2.0 * shortSide;
 
-    if (innerLength <= EPSILON ||
-        innerWidth <= EPSILON)
-    {
-        candidate.boxesPerLayer =
-            outerBoxes;
-
-        candidate.unusedArea =
-            std::max(
-                0.0,
-                pallet.getLength() *
-                    pallet.getWidth() -
-                outerLength *
-                    outerWidth
-            );
-
+    if (innerLength <= EPSILON || innerWidth <= EPSILON)
         return candidate;
-    }
+
+    const double innerLengthDimension =
+        innerRotated ? shortSide : longSide;
+
+    const double innerWidthDimension =
+        innerRotated ? longSide : shortSide;
+
+    const double innerRotation =
+        innerRotated
+            ? (boxLength >= boxWidth ? 90.0 : 0.0)
+            : (boxLength >= boxWidth ? 0.0 : 90.0);
+
+    const int innerAlongLength =
+        static_cast<int>(floor(
+            (innerLength + EPSILON) /
+            innerLengthDimension));
+
+    const int innerAlongWidth =
+        static_cast<int>(floor(
+            (innerWidth + EPSILON) /
+            innerWidthDimension));
 
     /*
-     * We will test:
+     * Center the complete hybrid pattern on the pallet.
+     */
+    const double offsetX =
+        max(0.0,
+            (pallet.getLength() - outerLength) / 2.0);
+
+    const double offsetY =
+        max(0.0,
+            (pallet.getWidth() - outerWidth) / 2.0);
+
+    const double horizontalRotation =
+        boxLength >= boxWidth ? 0.0 : 90.0;
+
+    const double verticalRotation =
+        normalizedAngle(horizontalRotation + 90.0);
+
+    vector<Footprint> positions;
+    positions.reserve(
+        2 * topBottomBoxes +
+        2 * sideBoxes +
+        max(0, innerAlongLength * innerAlongWidth));
+
+    /*
+     * ============================================================
+     * OUTER PINWHEEL PERIMETER
+     * ============================================================
      *
-     * 1. Normal grid inside the wheel
-     * 2. Rotated grid inside the wheel
-     * 3. Wheel inside the wheel
-     * 4. Rotated wheel inside the wheel
+     * TOP
      */
-    Orientation innerOrientations[2] =
+    for (int i = 0; i < topBottomBoxes; ++i)
     {
+        positions.push_back(
         {
-            orientation.length,
-            orientation.width,
-            orientation.height,
-            orientation.rotationZ
-        },
-
-        {
-            orientation.width,
-            orientation.length,
-            orientation.height,
-            orientation.rotationZ + 90.0
-        }
-    };
-
-    int bestInnerBoxes = 0;
-
-    InnerMode bestMode =
-        InnerMode::Grid;
-
-    int bestInnerLengthCount = 0;
-    int bestInnerWidthCount = 0;
-
-    Orientation bestInnerOrientation{};
+            offsetX + i * longSide,
+            offsetY,
+            longSide,
+            shortSide,
+            horizontalRotation
+        });
+    }
 
     /*
-     * ============================================================
-     * OPTION 1: NORMAL GRID FILL
-     * ============================================================
+     * BOTTOM
      */
-    for (const Orientation& innerOrientation :
-         innerOrientations)
+    for (int i = 0; i < topBottomBoxes; ++i)
     {
-        const int countLength =
-            calculateBoxesAlong(
-                innerLength,
-                innerOrientation.length
-            );
-
-        const int countWidth =
-            calculateBoxesAlong(
-                innerWidth,
-                innerOrientation.width
-            );
-
-        const int numberOfBoxes =
-            countLength *
-            countWidth;
-
-        if (numberOfBoxes >
-            bestInnerBoxes)
+        positions.push_back(
         {
-            bestInnerBoxes =
-                numberOfBoxes;
+            offsetX + i * longSide,
+            offsetY + outerWidth - shortSide,
+            longSide,
+            shortSide,
+            horizontalRotation
+        });
+    }
 
-            bestMode =
-                InnerMode::Grid;
+    /*
+     * LEFT SIDE
+     *
+     * Starts below the top row and therefore touches it instead
+     * of penetrating it.
+     */
+    for (int j = 0; j < sideBoxes; ++j)
+    {
+        positions.push_back(
+        {
+            offsetX,
+            offsetY + shortSide + j * longSide,
+            shortSide,
+            longSide,
+            verticalRotation
+        });
+    }
 
-            bestInnerLengthCount =
-                countLength;
-
-            bestInnerWidthCount =
-                countWidth;
-
-            bestInnerOrientation =
-                innerOrientation;
-        }
+    /*
+     * RIGHT SIDE
+     */
+    for (int j = 0; j < sideBoxes; ++j)
+    {
+        positions.push_back(
+        {
+            offsetX + outerLength - shortSide,
+            offsetY + shortSide + j * longSide,
+            shortSide,
+            longSide,
+            verticalRotation
+        });
     }
 
     /*
      * ============================================================
-     * OPTION 2: WHEEL INSIDE THE WHEEL
+     * INNER FILL
      * ============================================================
+     *
+     * The fill starts exactly at the inside edge of the frame.
+     * Therefore there is no artificial empty column caused by
+     * incorrect side-box spacing.
      */
-    for (const Orientation& innerOrientation :
-         innerOrientations)
+    for (int row = 0; row < innerAlongWidth; ++row)
     {
-        const int maxLength =
-            calculateBoxesAlong(
-                innerLength,
-                innerOrientation.length
-            );
-
-        const int maxWidth =
-            calculateBoxesAlong(
-                innerWidth,
-                innerOrientation.width
-            );
-
-        for (int innerL = 2;
-             innerL <= maxLength;
-             ++innerL)
+        for (int col = 0; col < innerAlongLength; ++col)
         {
-            for (int innerW = 2;
-                 innerW <= maxWidth;
-                 ++innerW)
+            positions.push_back(
             {
-                const double requiredLength =
-                    innerL *
-                    innerOrientation.length;
+                offsetX +
+                    innerStartX +
+                    col * innerLengthDimension,
 
-                const double requiredWidth =
-                    innerW *
-                    innerOrientation.width;
+                offsetY +
+                    innerStartY +
+                    row * innerWidthDimension,
 
-                if (requiredLength >
-                        innerLength + EPSILON ||
-                    requiredWidth >
-                        innerWidth + EPSILON)
-                {
+                innerLengthDimension,
+                innerWidthDimension,
+                innerRotation
+            });
+        }
+    }
+
+    if (!isValidLayer(positions, pallet))
+        return candidate;
+
+    candidate.valid = true;
+    candidate.positions = positions;
+    candidate.perimeterBoxes =
+        2 * topBottomBoxes + 2 * sideBoxes;
+    candidate.innerBoxes =
+        innerAlongLength * innerAlongWidth;
+    candidate.boxesPerLayer =
+        static_cast<int>(positions.size());
+    candidate.topBottomBoxes = topBottomBoxes;
+    candidate.sideBoxes = sideBoxes;
+    candidate.innerAlongLength = innerAlongLength;
+    candidate.innerAlongWidth = innerAlongWidth;
+    candidate.usedLength = outerLength;
+    candidate.usedWidth = outerWidth;
+
+    candidate.unusedArea = max(
+        0.0,
+        pallet.getLength() * pallet.getWidth() -
+        boxLength * boxWidth *
+            static_cast<double>(candidate.boxesPerLayer));
+
+    return candidate;
+}
+
+WheelInnerFillAlgorithm::Candidate
+WheelInnerFillAlgorithm::findBestCandidate(
+    const Pallet& pallet,
+    const Box& box) const
+{
+    Candidate best;
+
+    const double longSide =
+        max(box.getLength(), box.getWidth());
+
+    const double shortSide =
+        min(box.getLength(), box.getWidth());
+
+    if (longSide <= EPSILON || shortSide <= EPSILON)
+        return best;
+
+    const int maxTopBottom =
+        static_cast<int>(floor(
+            (pallet.getLength() + EPSILON) /
+            longSide));
+
+    const int maxSide =
+        static_cast<int>(floor(
+            (pallet.getWidth() -
+             2.0 * shortSide + EPSILON) /
+            longSide));
+
+    if (maxTopBottom < 2 || maxSide < 1)
+        return best;
+
+    /*
+     * Search all feasible frame sizes and both inner orientations.
+     *
+     * Primary objective:
+     *   more boxes per layer.
+     *
+     * Secondary objectives:
+     *   more compact use of the pallet and fewer unused strips.
+     */
+    for (int topBottom = 2;
+         topBottom <= maxTopBottom;
+         ++topBottom)
+    {
+        for (int side = 1;
+             side <= maxSide;
+             ++side)
+        {
+            for (bool innerRotated : {false, true})
+            {
+                Candidate candidate =
+                    buildCandidate(
+                        pallet,
+                        box,
+                        topBottom,
+                        side,
+                        innerRotated);
+
+                if (!candidate.valid)
                     continue;
-                }
 
-                const int wheelBoxes =
-                    calculateWheelBoxes(
-                        innerL,
-                        innerW
-                    );
+                const double candidateArea =
+                    candidate.usedLength *
+                    candidate.usedWidth;
 
-                if (wheelBoxes >
-                    bestInnerBoxes)
+                const double bestArea =
+                    best.usedLength *
+                    best.usedWidth;
+
+                if (!best.valid ||
+                    candidate.boxesPerLayer >
+                        best.boxesPerLayer ||
+                    (candidate.boxesPerLayer ==
+                         best.boxesPerLayer &&
+                     candidateArea > bestArea) ||
+                    (candidate.boxesPerLayer ==
+                         best.boxesPerLayer &&
+                     fabs(candidateArea - bestArea) <= EPSILON &&
+                     candidate.unusedArea <
+                         best.unusedArea))
                 {
-                    bestInnerBoxes =
-                        wheelBoxes;
-
-                    bestMode =
-                        InnerMode::Wheel;
-
-                    bestInnerLengthCount =
-                        innerL;
-
-                    bestInnerWidthCount =
-                        innerW;
-
-                    bestInnerOrientation =
-                        innerOrientation;
+                    best = candidate;
                 }
             }
         }
     }
 
-    candidate.innerMode =
-        bestMode;
+    return best;
+}
 
-    candidate.innerBoxesAlongLength =
-        bestInnerLengthCount;
+bool WheelInnerFillAlgorithm::fitsOnPallet(
+    const Footprint& footprint,
+    const Pallet& pallet) const
+{
+    return footprint.x >= -EPSILON &&
+           footprint.y >= -EPSILON &&
+           footprint.x + footprint.length <=
+               pallet.getLength() + EPSILON &&
+           footprint.y + footprint.width <=
+               pallet.getWidth() + EPSILON;
+}
 
-    candidate.innerBoxesAlongWidth =
-        bestInnerWidthCount;
+bool WheelInnerFillAlgorithm::overlaps(
+    const Footprint& first,
+    const Footprint& second) const
+{
+    const double overlapX =
+        min(first.x + first.length,
+            second.x + second.length) -
+        max(first.x, second.x);
 
-    candidate.innerBoxes =
-        bestInnerBoxes;
+    const double overlapY =
+        min(first.y + first.width,
+            second.y + second.width) -
+        max(first.y, second.y);
 
-    candidate.innerOrientation =
-        bestInnerOrientation;
+    return overlapX > EPSILON &&
+           overlapY > EPSILON;
+}
 
-    candidate.boxesPerLayer =
-        candidate.outerBoxes +
-        candidate.innerBoxes;
+bool WheelInnerFillAlgorithm::isValidLayer(
+    const vector<Footprint>& positions,
+    const Pallet& pallet) const
+{
+    if (positions.empty())
+        return false;
 
-    /*
-     * ============================================================
-     * SCORE
-     * ============================================================
-     *
-     * Primary:
-     *   More boxes per layer.
-     *
-     * Secondary:
-     *   Less unused pallet area.
-     */
-    const double palletArea =
-        pallet.getLength() *
-        pallet.getWidth();
+    for (const Footprint& footprint : positions)
+    {
+        if (!fitsOnPallet(footprint, pallet))
+            return false;
 
-    const double usedArea =
-        candidate.usedLength *
-        candidate.usedWidth;
+        if (footprint.length <= EPSILON ||
+            footprint.width <= EPSILON)
+        {
+            return false;
+        }
+    }
 
-    candidate.unusedArea =
-        std::max(
-            0.0,
-            palletArea - usedArea
-        );
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        for (size_t j = i + 1;
+             j < positions.size();
+             ++j)
+        {
+            if (overlaps(positions[i], positions[j]))
+                return false;
+        }
+    }
 
-    return candidate;
+    return true;
 }
 
 void WheelInnerFillAlgorithm::addPlacement(
@@ -374,425 +414,11 @@ void WheelInnerFillAlgorithm::addPlacement(
     double rotationZ) const
 {
     Matrix4x4 pose;
-
-    pose.setTranslation(
-        x,
-        y,
-        z
-    );
-
-    pose.setRotationZ(
-        rotationZ
-    );
-
-    Placement placement(
-        boxId,
-        palletId,
-        pose
-    );
+    pose.setTranslation(x, y, z);
+    pose.setRotationZ(normalizedAngle(rotationZ));
 
     result.getPlacements().push_back(
-        placement
-    );
-}
-
-void WheelInnerFillAlgorithm::addOuterWheel(
-    PalletizationResult& result,
-    int& boxId,
-    int palletId,
-    double offsetX,
-    double offsetY,
-    double z,
-    const Candidate& candidate,
-    int maxBoxId,
-    bool flipLayer) const
-{
-    const Orientation& o =
-        candidate.outerOrientation;
-
-    const int nL =
-        candidate.outerBoxesAlongLength;
-
-    const int nW =
-        candidate.outerBoxesAlongWidth;
-
-    const double layerRotation =
-        flipLayer
-            ? 180.0
-            : 0.0;
-
-    auto place =
-        [&](double x,
-            double y,
-            double rotation)
-        {
-            if (boxId > maxBoxId)
-            {
-                return;
-            }
-
-            addPlacement(
-                result,
-                boxId,
-                palletId,
-                x,
-                y,
-                z,
-                rotation +
-                    layerRotation
-            );
-
-            ++boxId;
-        };
-
-    /*
-     * TOP
-     */
-    for (int i = 0;
-         i < nL;
-         ++i)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            offsetX +
-                i * o.length,
-            offsetY,
-            o.rotationZ
-        );
-    }
-
-    /*
-     * BOTTOM
-     */
-    for (int i = 0;
-         i < nL;
-         ++i)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            offsetX +
-                i * o.length,
-            offsetY +
-                (nW - 1) *
-                    o.width,
-            o.rotationZ
-        );
-    }
-
-    /*
-     * LEFT
-     */
-    for (int j = 1;
-         j < nW - 1;
-         ++j)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            offsetX,
-            offsetY +
-                j * o.width,
-            o.rotationZ + 90.0
-        );
-    }
-
-    /*
-     * RIGHT
-     */
-    for (int j = 1;
-         j < nW - 1;
-         ++j)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            offsetX +
-                (nL - 1) *
-                    o.length,
-            offsetY +
-                j * o.width,
-            o.rotationZ + 90.0
-        );
-    }
-}
-
-void WheelInnerFillAlgorithm::addInnerGrid(
-    PalletizationResult& result,
-    int& boxId,
-    int palletId,
-    double offsetX,
-    double offsetY,
-    double z,
-    const Candidate& candidate,
-    int maxBoxId,
-    bool flipLayer) const
-{
-    if (candidate.innerBoxes <= 0)
-    {
-        return;
-    }
-
-    const Orientation& outer =
-        candidate.outerOrientation;
-
-    const Orientation& inner =
-        candidate.innerOrientation;
-
-    /*
-     * Safe interior starting point.
-     */
-    const double startX =
-        offsetX +
-        outer.width;
-
-    const double startY =
-        offsetY +
-        outer.width;
-
-    const double layerRotation =
-        flipLayer
-            ? 180.0
-            : 0.0;
-
-    for (int row = 0;
-         row <
-             candidate.innerBoxesAlongWidth;
-         ++row)
-    {
-        for (int col = 0;
-             col <
-                 candidate.innerBoxesAlongLength;
-             ++col)
-        {
-            if (boxId > maxBoxId)
-            {
-                return;
-            }
-
-            const double x =
-                startX +
-                col *
-                    inner.length;
-
-            const double y =
-                startY +
-                row *
-                    inner.width;
-
-            addPlacement(
-                result,
-                boxId,
-                palletId,
-                x,
-                y,
-                z,
-                inner.rotationZ +
-                    layerRotation
-            );
-
-            ++boxId;
-        }
-    }
-}
-
-void WheelInnerFillAlgorithm::addInnerWheel(
-    PalletizationResult& result,
-    int& boxId,
-    int palletId,
-    double offsetX,
-    double offsetY,
-    double z,
-    const Candidate& candidate,
-    int maxBoxId,
-    bool flipLayer) const
-{
-    if (candidate.innerBoxes <= 0)
-    {
-        return;
-    }
-
-    const Orientation& outer =
-        candidate.outerOrientation;
-
-    const Orientation& inner =
-        candidate.innerOrientation;
-
-    const int nL =
-        candidate.innerBoxesAlongLength;
-
-    const int nW =
-        candidate.innerBoxesAlongWidth;
-
-    /*
-     * Available interior dimensions.
-     */
-    const double availableLength =
-        (candidate.outerBoxesAlongLength - 1) *
-            outer.length -
-        outer.width;
-
-    const double availableWidth =
-        (candidate.outerBoxesAlongWidth - 2) *
-            outer.width;
-
-    /*
-     * Dimensions of the inner wheel.
-     */
-    const double wheelLength =
-        nL *
-        inner.length;
-
-    const double wheelWidth =
-        nW *
-        inner.width;
-
-    /*
-     * Center the inner wheel.
-     */
-    const double startX =
-        offsetX +
-        outer.width +
-        std::max(
-            0.0,
-            (availableLength -
-             wheelLength) / 2.0
-        );
-
-    const double startY =
-        offsetY +
-        outer.width +
-        std::max(
-            0.0,
-            (availableWidth -
-             wheelWidth) / 2.0
-        );
-
-    const double layerRotation =
-        flipLayer
-            ? 180.0
-            : 0.0;
-
-    auto place =
-        [&](double x,
-            double y,
-            double rotation)
-        {
-            if (boxId > maxBoxId)
-            {
-                return;
-            }
-
-            addPlacement(
-                result,
-                boxId,
-                palletId,
-                x,
-                y,
-                z,
-                rotation +
-                    layerRotation
-            );
-
-            ++boxId;
-        };
-
-    /*
-     * TOP
-     */
-    for (int i = 0;
-         i < nL;
-         ++i)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            startX +
-                i * inner.length,
-            startY,
-            inner.rotationZ
-        );
-    }
-
-    /*
-     * BOTTOM
-     */
-    for (int i = 0;
-         i < nL;
-         ++i)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            startX +
-                i * inner.length,
-            startY +
-                (nW - 1) *
-                    inner.width,
-            inner.rotationZ
-        );
-    }
-
-    /*
-     * LEFT
-     */
-    for (int j = 1;
-         j < nW - 1;
-         ++j)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            startX,
-            startY +
-                j * inner.width,
-            inner.rotationZ + 90.0
-        );
-    }
-
-    /*
-     * RIGHT
-     */
-    for (int j = 1;
-         j < nW - 1;
-         ++j)
-    {
-        if (boxId > maxBoxId)
-        {
-            return;
-        }
-
-        place(
-            startX +
-                (nL - 1) *
-                    inner.length,
-            startY +
-                j * inner.width,
-            inner.rotationZ + 90.0
-        );
-    }
+        Placement(boxId, palletId, pose));
 }
 
 PalletizationResult
@@ -803,365 +429,131 @@ WheelInnerFillAlgorithm::generatePattern(
 {
     PalletizationResult result;
 
-    if (quantity <= 0)
+    if (quantity <= 0 ||
+        box.getLength() <= EPSILON ||
+        box.getWidth() <= EPSILON ||
+        box.getHeight() <= EPSILON ||
+        pallet.getLength() <= EPSILON ||
+        pallet.getWidth() <= EPSILON ||
+        pallet.getHeight() <= EPSILON)
     {
         return result;
     }
 
-    const double boxLength =
-        box.getLength();
+    Candidate candidate =
+        findBestCandidate(pallet, box);
 
-    const double boxWidth =
-        box.getWidth();
-
-    const double boxHeight =
-        box.getHeight();
-
-    if (boxLength <= EPSILON ||
-        boxWidth <= EPSILON ||
-        boxHeight <= EPSILON)
-    {
+    if (!candidate.valid || candidate.boxesPerLayer <= 0)
         return result;
-    }
 
-    /*
-     * ============================================================
-     * TWO BASIC BOX ORIENTATIONS
-     * ============================================================
-     *
-     * Orientation 1:
-     *   L x W
-     *
-     * Orientation 2:
-     *   W x L
-     */
-    Orientation orientations[2] =
-    {
-        {
-            boxLength,
-            boxWidth,
-            boxHeight,
-            0.0
-        },
+    const int layersPerPallet =
+        static_cast<int>(floor(
+            (pallet.getHeight() + EPSILON) /
+            box.getHeight()));
 
-        {
-            boxWidth,
-            boxLength,
-            boxHeight,
-            90.0
-        }
-    };
-
-    Candidate bestCandidate;
-
-    /*
-     * ============================================================
-     * SEARCH ALL POSSIBLE OUTER WHEELS
-     * ============================================================
-     */
-    for (const Orientation& orientation :
-         orientations)
-    {
-        const int maxL =
-            calculateBoxesAlong(
-                pallet.getLength(),
-                orientation.length
-            );
-
-        const int maxW =
-            calculateBoxesAlong(
-                pallet.getWidth(),
-                orientation.width
-            );
-
-        for (int nL = 2;
-             nL <= maxL;
-             ++nL)
-        {
-            for (int nW = 2;
-                 nW <= maxW;
-                 ++nW)
-            {
-                Candidate candidate =
-                    evaluateCandidate(
-                        pallet,
-                        orientation,
-                        nL,
-                        nW
-                    );
-
-                if (!candidate.valid)
-                {
-                    continue;
-                }
-
-                /*
-                 * Choose the arrangement which puts the most
-                 * boxes on one layer.
-                 *
-                 * If equal, choose the one occupying less
-                 * unused pallet area.
-                 */
-                if (!bestCandidate.valid ||
-                    candidate.boxesPerLayer >
-                        bestCandidate.boxesPerLayer ||
-                    (
-                        candidate.boxesPerLayer ==
-                            bestCandidate.boxesPerLayer &&
-                        candidate.unusedArea <
-                            bestCandidate.unusedArea
-                    ))
-                {
-                    bestCandidate =
-                        candidate;
-                }
-            }
-        }
-    }
-
-    if (!bestCandidate.valid ||
-        bestCandidate.boxesPerLayer <= 0)
-    {
+    if (layersPerPallet <= 0)
         return result;
-    }
 
-    /*
-     * ============================================================
-     * NUMBER OF LAYERS
-     * ============================================================
-     */
-    const int layers =
-        static_cast<int>(
-            std::floor(
-                (pallet.getHeight() +
-                 EPSILON) /
-                boxHeight
-            )
-        );
-
-    if (layers <= 0)
-    {
-        return result;
-    }
-
-    /*
-     * Maximum boxes that this arrangement can hold on one pallet.
-     */
     const int boxesPerPallet =
-        bestCandidate.boxesPerLayer *
-        layers;
+        candidate.boxesPerLayer * layersPerPallet;
 
-    const int palletCount =
-        static_cast<int>(
-            std::ceil(
-                static_cast<double>(quantity) /
-                static_cast<double>(
-                    boxesPerPallet
-                )
-            )
-        );
-
-    int boxId = 1;
-
+    int boxesPlaced = 0;
     int fullPallets = 0;
+    int palletId = 1;
 
-    /*
-     * ============================================================
-     * GENERATE PALLETS
-     * ============================================================
-     */
-    for (int palletId = 1;
-         palletId <= palletCount;
-         ++palletId)
-    {
-        const int remainingBoxes =
-            quantity -
-            (boxId - 1);
-
-        if (remainingBoxes <= 0)
-        {
-            break;
-        }
-
-        const int boxesOnThisPallet =
-            std::min(
-                boxesPerPallet,
-                remainingBoxes
-            );
-
-        /*
-         * Center the arrangement on the pallet.
-         */
-        const double offsetX =
-            std::max(
-                0.0,
-                (
-                    pallet.getLength() -
-                    bestCandidate.usedLength
-                ) / 2.0
-            );
-
-        const double offsetY =
-            std::max(
-                0.0,
-                (
-                    pallet.getWidth() -
-                    bestCandidate.usedWidth
-                ) / 2.0
-            );
-
-        const int palletStartBoxId =
-            boxId;
-
-        /*
-         * ========================================================
-         * LAYERS
-         * ========================================================
-         */
-        for (int layer = 0;
-             layer < layers;
-             ++layer)
-        {
-            if (boxId >
-                palletStartBoxId +
-                    boxesOnThisPallet -
-                    1)
-            {
-                break;
-            }
-
-            const int layerStartBoxId =
-                boxId;
-
-            const int maxBoxId =
-                palletStartBoxId +
-                boxesOnThisPallet -
-                1;
-
-            const bool flipLayer =
-                (layer % 2 == 1);
-
-            const double z =
-                layer *
-                boxHeight;
-
-            /*
-             * First place the OUTER WHEEL.
-             */
-            addOuterWheel(
-                result,
-                boxId,
-                palletId,
-                offsetX,
-                offsetY,
-                z,
-                bestCandidate,
-                maxBoxId,
-                flipLayer
-            );
-
-            /*
-             * Then use whatever box capacity remains in the
-             * interior.
-             */
-            if (boxId <= maxBoxId)
-            {
-                if (bestCandidate.innerMode ==
-                    InnerMode::Grid)
-                {
-                    addInnerGrid(
-                        result,
-                        boxId,
-                        palletId,
-                        offsetX,
-                        offsetY,
-                        z,
-                        bestCandidate,
-                        maxBoxId,
-                        flipLayer
-                    );
-                }
-                else
-                {
-                    addInnerWheel(
-                        result,
-                        boxId,
-                        palletId,
-                        offsetX,
-                        offsetY,
-                        z,
-                        bestCandidate,
-                        maxBoxId,
-                        flipLayer
-                    );
-                }
-            }
-
-            /*
-             * Safety check: every layer must make progress.
-             */
-            if (boxId ==
-                layerStartBoxId)
-            {
-                break;
-            }
-        }
-
-        const int boxesPlacedOnPallet =
-            boxId -
-            palletStartBoxId;
-
-        if (boxesPlacedOnPallet ==
-            boxesPerPallet)
-        {
-            ++fullPallets;
-        }
-    }
-
-    /*
-     * ============================================================
-     * STATISTICS
-     * ============================================================
-     */
-    result.getStatistics().setTotalBoxes(
-        quantity
-    );
-
-    result.getStatistics().setFullPallets(
-        fullPallets
-    );
-
-    /*
-     * Last pallet statistics.
-     */
-    const int boxesOnLastPallet =
-        quantity -
-        (
-            (palletCount - 1) *
-            boxesPerPallet
-        );
+    const double boxVolume =
+        box.getLength() *
+        box.getWidth() *
+        box.getHeight();
 
     const double palletVolume =
         pallet.getLength() *
         pallet.getWidth() *
         pallet.getHeight();
 
-    const double boxVolume =
-        boxLength *
-        boxWidth *
-        boxHeight;
+    while (boxesPlaced < quantity)
+    {
+        const int palletStart = boxesPlaced;
 
-    const double usedVolume =
-        boxesOnLastPallet *
-        boxVolume;
+        for (int layer = 0;
+             layer < layersPerPallet &&
+             boxesPlaced < quantity;
+             ++layer)
+        {
+            const double z =
+                layer * box.getHeight();
 
-    result.getStatistics().setLastPalletStatistics(
-        PalletStatistics(
-            palletCount,
-            usedVolume,
-            palletVolume
-        )
-    );
+            /*
+             * Alternate the handedness of the complete layer.
+             * 180 degrees leaves the footprint unchanged but
+             * changes the visual orientation of the pattern.
+             */
+            const double layerRotation =
+                (layer % 2 == 1) ? 180.0 : 0.0;
+
+            for (const Footprint& footprint : candidate.positions)
+            {
+                if (boxesPlaced >= quantity)
+                    break;
+
+                addPlacement(
+                    result,
+                    boxesPlaced + 1,
+                    palletId,
+                    footprint.x,
+                    footprint.y,
+                    z,
+                    footprint.rotationZ + layerRotation);
+
+                ++boxesPlaced;
+            }
+        }
+
+        const int boxesOnPallet =
+            boxesPlaced - palletStart;
+
+        if (boxesOnPallet == boxesPerPallet)
+        {
+            ++fullPallets;
+        }
+        else if (boxesOnPallet > 0)
+        {
+            result.getStatistics().setLastPalletStatistics(
+                PalletStatistics(
+                    palletId,
+                    boxesOnPallet * boxVolume,
+                    palletVolume));
+        }
+
+        ++palletId;
+
+        if (boxesOnPallet <= 0)
+            break;
+    }
+
+    result.getStatistics().setTotalBoxes(boxesPlaced);
+    result.getStatistics().setFullPallets(fullPallets);
+
+    cout << "\nHYBRID PINWHEEL ALGORITHM" << endl;
+    cout << "Boxes per layer: "
+         << candidate.boxesPerLayer << endl;
+    cout << "Perimeter boxes: "
+         << candidate.perimeterBoxes << endl;
+    cout << "Inner fill boxes: "
+         << candidate.innerBoxes << endl;
+    cout << "Top/Bottom boxes per row: "
+         << candidate.topBottomBoxes << endl;
+    cout << "Side boxes per side: "
+         << candidate.sideBoxes << endl;
+    cout << "Inner fill grid: "
+         << candidate.innerAlongLength
+         << " x "
+         << candidate.innerAlongWidth << endl;
+    cout << "Layers per pallet: "
+         << layersPerPallet << endl;
+    cout << "Pallet capacity: "
+         << boxesPerPallet << endl;
+    cout << "Geometric validation: PASSED" << endl;
 
     return result;
 }

@@ -371,12 +371,12 @@ function App() {
                       RowsCols
                     </option>
 
-                    <option value="wheel">
-                      Wheel
+                    <option value="pinwheel">
+                      Pinwheel
                     </option>
 
-                    <option value="wheelinnerfill">
-                      Wheel with Inner Fill
+                    <option value="hybridpinwheel">
+                      Hybrid Pinwheel
                     </option>
 
                     <option value="bricks">
@@ -435,8 +435,10 @@ function App() {
 
             <p>
               Algorithm:{" "}
-              {algorithm === "wheelinnerfill"
-                ? "Wheel with Inner Fill"
+              {algorithm === "hybridpinwheel"
+                ? "Hybrid Pinwheel"
+                : algorithm === "pinwheel"
+                ? "Pinwheel"
                 : algorithm === "rowscols"
                 ? "RowsCols"
                 : algorithm.charAt(0).toUpperCase() +
