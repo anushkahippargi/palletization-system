@@ -13,6 +13,7 @@
 #include "WheelAlgorithm.h"
 #include "WheelInnerFillAlgorithm.h"
 #include "BricksAlgorithm.h"
+#include "PinwheelAlgorithm.h"
 
 using namespace std;
 
@@ -474,71 +475,46 @@ int main(int argc, char* argv[])
              * Existing Rows algorithm
              */
 
+
 if (algorithmName == "rows")
 {
     RowAlgorithm algorithm;
-
-    result = algorithm.generatePattern(
-        pallet,
-        box,
-        quantity
-    );
+    result = algorithm.generatePattern(pallet, box, quantity);
 }
 else if (algorithmName == "rowscols")
 {
     RowsColsAlgorithm algorithm;
-
-    result = algorithm.generatePattern(
-        pallet,
-        box,
-        quantity
-    );
+    result = algorithm.generatePattern(pallet, box, quantity);
 }
 else if (algorithmName == "pinwheel" || algorithmName == "wheel")
 {
     WheelAlgorithm algorithm;
-
-    result = algorithm.generatePattern(
-        pallet,
-        box,
-        quantity
-    );
+    result = algorithm.generatePattern(pallet, box, quantity);
 }
-else if (algorithmName == "hybridpinwheel" || algorithmName == "wheelinnerfill")
+else if (algorithmName == "hybridpinwheel" ||
+         algorithmName == "wheelinnerfill")
 {
     WheelInnerFillAlgorithm algorithm;
-
-    result = algorithm.generatePattern(
-        pallet,
-        box,
-        quantity
-    );
+    result = algorithm.generatePattern(pallet, box, quantity);
 }
 else if (algorithmName == "bricks")
 {
     BricksAlgorithm algorithm;
-    result = algorithm.generatePattern(
-        pallet,
-        box,
-        quantity);
+    result = algorithm.generatePattern(pallet, box, quantity);
 }
 else
 {
-    std::cerr
-        << "Unknown algorithm: "
-        << algorithmName
-        << std::endl;
+    std::cerr << "Unknown algorithm: "
+              << algorithmName << std::endl;
 
-    std::cerr
-        << "Available algorithms: "
-        << "rows, "
-        << "rowscols, "
-        << "wheel, "
-        << "wheelinnerfill"
-        << std::endl;
+    std::cerr << "Available algorithms: "
+              << "rows, rowscols, pinwheel, wheel, "
+              << "hybridpinwheel, wheelinnerfill, bricks"
+              << std::endl;
 
     return 1;
 }
+
 
             /*
              * ------------------------------------------------

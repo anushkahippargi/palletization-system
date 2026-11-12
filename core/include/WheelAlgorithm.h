@@ -27,7 +27,12 @@ private:
 
 
     /*
-     * Complete valid pinwheel layer.
+     * One complete wheel layer.
+     *
+     * nAlongLength / nAlongWidth are the two variation
+     * dimensions from the pallet-configuration document.
+     * Remaining space on each edge is filled by integer
+     * division with the rotated box.
      */
     struct Candidate
     {
@@ -35,10 +40,11 @@ private:
 
         int boxesPerLayer = 0;
 
-        int unitsAlongLength = 0;
-        int unitsAlongWidth = 0;
+        int nAlongLength = 0;
+        int nAlongWidth = 0;
 
-        double unitSize = 0.0;
+        int alongLengthBoxes = 0;
+        int alongWidthBoxes = 0;
 
         double usedLength = 0.0;
         double usedWidth = 0.0;
@@ -49,47 +55,37 @@ private:
     };
 
 
-    /*
-     * Build one complete pinwheel layer.
-     */
     Candidate buildCandidate(
         const Pallet& pallet,
         const Box& box,
-        bool reversePattern) const;
+        int nAlongLength,
+        int nAlongWidth,
+        double alongEdge,
+        double thickness,
+        double horizontalRotation,
+        double verticalRotation) const;
 
 
-    /*
-     * Check whether one box is completely inside
-     * the pallet boundary.
-     */
+    Candidate findBestCandidate(
+        const Pallet& pallet,
+        const Box& box) const;
+
+
     bool fitsOnPallet(
         const Footprint& footprint,
         const Pallet& pallet) const;
 
 
-    /*
-     * Check whether two boxes have positive-area
-     * intersection.
-     *
-     * Touching edges are allowed.
-     */
     bool overlaps(
         const Footprint& first,
         const Footprint& second) const;
 
 
-    /*
-     * Validate the entire generated layer.
-     */
     bool isValidLayer(
         const std::vector<Footprint>& positions,
         const Pallet& pallet) const;
 
 
-    /*
-     * Convert a footprint into the project's
-     * existing Placement representation.
-     */
     void addPlacement(
         PalletizationResult& result,
         int boxId,

@@ -25,6 +25,8 @@ add_executable(palletization
 
     src/WheelAlgorithm.cpp
 
+    src/PinwheelAlgorithm.cpp
+
     src/WheelInnerFillAlgorithm.cpp
 
     src/Matrix4x4.cpp
